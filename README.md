@@ -52,9 +52,17 @@ through Remote Control.
 Download the latest build from
 [Releases](https://github.com/bdkent/claude-local/releases):
 
-- **macOS:** the `.dmg` (universal: Apple Silicon and Intel). Builds aren't
-  notarized yet, so the first time, right-click the app in Applications and
-  choose **Open**. Keep-alive needs tmux: `brew install tmux`.
+- **macOS:** the `.dmg` (universal: Apple Silicon and Intel). Keep-alive needs
+  tmux: `brew install tmux`. Builds aren't notarized yet, so macOS blocks the
+  first launch. Either run
+
+  ```sh
+  xattr -dr com.apple.quarantine "/Applications/Claude Local.app"
+  ```
+
+  or try to open the app, click **Done**, then go to **System Settings →
+  Privacy & Security** and click **Open Anyway** next to Claude Local. (On
+  macOS 15 and later, right-click → Open no longer skips the check.)
 - **Windows:** the `-setup.exe` or `.msi`.
 
 Turn on **Launch at login** in Settings so keep-alive is always running.

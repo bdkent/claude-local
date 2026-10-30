@@ -47,7 +47,7 @@ jobs:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseName: Claude Local v__VERSION__
           releaseBody: |
-            **macOS:** download the `.dmg` (Apple Silicon and Intel). The app is not notarized yet, so on first launch right-click it in Applications and choose **Open**.
+            **macOS:** download the `.dmg` (Apple Silicon and Intel) and drag Claude Local to Applications. It isn't notarized yet, so macOS blocks the first launch. Fix it once with `xattr -dr com.apple.quarantine "/Applications/Claude Local.app"`, or open the app, click **Done**, then System Settings → Privacy & Security → **Open Anyway**.
             **Windows:** download the `-setup.exe` (or the `.msi`).
           releaseDraft: true
           prerelease: false
