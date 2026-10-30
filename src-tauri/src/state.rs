@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -6,7 +7,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
 use claude_local_core::{
-    claude, keepalive, terminal, Config, Keepalive, Session, SessionKind, Target, ToolEnv,
+    claude, doctor, env, keepalive, terminal, Check, Config, Keepalive, Session, SessionKind,
+    Target, ToolEnv,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -40,6 +42,8 @@ pub struct Snapshot {
     pub error: Option<String>,
     pub keepalive_enabled: bool,
     pub keepalive_errors: Vec<String>,
+    /// Dependency checks; failing ones are shown as a "Setup needed" card.
+    pub checks: Vec<Check>,
     /// Unix time in milliseconds.
     pub updated_at: u64,
 }
@@ -47,8 +51,10 @@ pub struct Snapshot {
 pub struct AppState {
     pub visible: AtomicBool,
     config: Mutex<Config>,
-    /// Cached tool discovery; it runs a login shell, so we don't redo it every poll.
+    /// The login shell's PATH. Finding it starts a shell, so it's cached.
+    path: Mutex<Option<OsString>>,
     env: Mutex<Option<Result<ToolEnv, String>>>,
+    checks: Mutex<Option<Vec<Check>>>,
     keepalive: Mutex<Option<Keepalive>>,
     snapshot: Mutex<Snapshot>,
     wake: (Mutex<bool>, Condvar),
@@ -63,7 +69,9 @@ impl AppState {
         Self {
             visible: AtomicBool::new(false),
             config: Mutex::new(config),
+            path: Mutex::new(None),
             env: Mutex::new(None),
+            checks: Mutex::new(None),
             keepalive: Mutex::new(None),
             snapshot: Mutex::new(Snapshot::default()),
             wake: (Mutex::new(false), Condvar::new()),
@@ -104,19 +112,39 @@ impl AppState {
         std::mem::take(&mut *guard)
     }
 
-    fn tool_env(&self, rediscover_failed: bool) -> Result<ToolEnv, String> {
-        let mut env = lock(&self.env);
-        let stale = match &*env {
-            None => true,
-            Some(Err(_)) => rediscover_failed,
-            Some(Ok(_)) => false,
-        };
-        if stale {
-            let config = self.config();
-            let claude = (!config.claude_path.is_empty()).then(|| Path::new(&config.claude_path));
-            *env = Some(ToolEnv::discover(claude).map_err(|e| format!("{e:#}")));
+    /// The search PATH, re-read from the login shell when `refresh` is set.
+    fn search_path(&self, refresh: bool) -> OsString {
+        let mut path = lock(&self.path);
+        if refresh || path.is_none() {
+            *path = Some(env::search_path());
         }
-        env.clone().expect("set above")
+        path.clone().expect("set above")
+    }
+
+    /// Find `claude`. Once found it's cached; until then every call looks
+    /// again (cheaply), and `rediscover` also re-reads the login shell's PATH.
+    fn tool_env(&self, rediscover: bool) -> Result<ToolEnv, String> {
+        let mut env = lock(&self.env);
+        if let Some(Ok(found)) = &*env {
+            return Ok(found.clone());
+        }
+        let path = self.search_path(rediscover && env.is_some());
+        let config = self.config();
+        let claude = (!config.claude_path.is_empty()).then(|| Path::new(&config.claude_path));
+        let found = ToolEnv::from_path(path, claude).map_err(|e| format!("{e:#}"));
+        *env = Some(found.clone());
+        found
+    }
+
+    /// Dependency checks. Re-run when forced or while any are failing, so
+    /// installing the missing tool clears the warning by itself.
+    fn checks(&self, env: &Result<ToolEnv, String>, config: &Config, force: bool) -> Vec<Check> {
+        let mut cached = lock(&self.checks);
+        let stale = force || cached.as_ref().is_none_or(|c| c.iter().any(|c| !c.ok));
+        if stale {
+            *cached = Some(doctor::run(env, &self.search_path(false), config));
+        }
+        cached.clone().expect("set above")
     }
 
     fn with_keepalive<T>(&self, env: &ToolEnv, f: impl FnOnce(&mut Keepalive) -> T) -> Result<T> {
@@ -138,8 +166,13 @@ impl AppState {
             ..Default::default()
         };
 
-        match self.tool_env(rediscover) {
-            Err(e) => snap.error = Some(e),
+        let env = self.tool_env(rediscover);
+        snap.checks = self.checks(&env, &config, rediscover);
+        let tmux_missing = snap.checks.iter().any(|c| c.name == "tmux" && !c.ok);
+
+        match env {
+            // The "Setup needed" card explains a missing `claude`.
+            Err(_) => {}
             // Never reconcile on a failed listing: an empty list would tear
             // down every keep-alive.
             Ok(env) => match claude::list_sessions(&env) {
@@ -152,6 +185,8 @@ impl AppState {
                                 alive = report.alive;
                                 snap.keepalive_errors = report.errors;
                             }
+                            // A missing tmux is already explained by the setup card.
+                            Err(_) if tmux_missing => {}
                             Err(e) => snap.keepalive_errors.push(format!("{e:#}")),
                         }
                     }
@@ -273,6 +308,7 @@ fn update_tray(app: &AppHandle, snap: &Snapshot) {
             .count()
     };
     let tooltip = match &snap.error {
+        _ if snap.checks.iter().any(|c| !c.ok) => "Claude Local: setup needed".to_string(),
         Some(_) => "Claude Local: can't list sessions".to_string(),
         None => format!(
             "Claude Local: {} background, {} interactive",
@@ -285,16 +321,25 @@ fn update_tray(app: &AppHandle, snap: &Snapshot) {
 
 pub fn spawn_poller(app: AppHandle, state: Arc<AppState>) {
     std::thread::spawn(move || {
-        let mut woken = false;
+        state.refresh(&app, false);
+        // Nothing else would surface a missing dependency in a tray-only app,
+        // so open the list to show the setup card.
+        if state.snapshot().checks.iter().any(|c| !c.ok) {
+            crate::show_window(&app);
+        }
         loop {
+            let woken = state.wait(Duration::from_secs(poll_secs(&state)));
             state.refresh(&app, woken);
-            let config = state.config();
-            let secs = if state.visible.load(Ordering::SeqCst) {
-                config.poll_visible_secs
-            } else {
-                config.poll_hidden_secs
-            };
-            woken = state.wait(Duration::from_secs(secs.max(1)));
         }
     });
+}
+
+fn poll_secs(state: &AppState) -> u64 {
+    let config = state.config();
+    let secs = if state.visible.load(Ordering::SeqCst) {
+        config.poll_visible_secs
+    } else {
+        config.poll_hidden_secs
+    };
+    secs.max(1)
 }

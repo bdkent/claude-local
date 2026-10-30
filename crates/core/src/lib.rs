@@ -3,12 +3,14 @@
 
 pub mod claude;
 pub mod config;
+pub mod doctor;
 pub mod env;
 pub mod keepalive;
 pub mod session;
 pub mod terminal;
 
 pub use config::Config;
+pub use doctor::Check;
 pub use env::ToolEnv;
 pub use keepalive::{Keepalive, Report};
 pub use session::{Session, SessionKind};

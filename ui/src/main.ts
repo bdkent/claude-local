@@ -19,11 +19,21 @@ interface SessionView {
   keptAlive: boolean;
 }
 
+interface Check {
+  name: string;
+  ok: boolean;
+  summary: string;
+  why: string;
+  fix?: string;
+  hint?: string;
+}
+
 interface Snapshot {
   sessions: SessionView[];
   error?: string;
   keepaliveEnabled: boolean;
   keepaliveErrors: string[];
+  checks: Check[];
   updatedAt: number;
 }
 
@@ -199,8 +209,11 @@ function render() {
     }),
   );
 
+  const failing = snapshot.checks.filter((c) => !c.ok);
+  renderSetup(failing);
+
   const empty = $("#empty");
-  empty.hidden = shown.length > 0 || !!snapshot.error;
+  empty.hidden = shown.length > 0 || !!snapshot.error || failing.some((c) => c.name === "claude");
   empty.textContent = sessions.length === 0 ? "No Claude sessions running." : "No sessions match these filters.";
 
   if (snapshot.error) showBanner(snapshot.error, "error");
@@ -223,6 +236,66 @@ function showFlash(text: string) {
   flash = { text, until: Date.now() + ms };
   render();
   setTimeout(render, ms + 50);
+}
+
+// --- setup card ----------------------------------------------------------
+
+async function copyText(text: string, code: HTMLElement, button: HTMLButtonElement) {
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "Copied";
+    setTimeout(() => (button.textContent = "Copy"), 1500);
+  } catch {
+    // No clipboard access: select the command so Cmd/Ctrl+C works.
+    const range = document.createRange();
+    range.selectNodeContents(code);
+    getSelection()?.removeAllRanges();
+    getSelection()?.addRange(range);
+  }
+}
+
+function renderSetup(failing: Check[]) {
+  const setup = $("#setup");
+  // Rebuild only on change so polling doesn't reset the copy buttons.
+  const key = JSON.stringify(failing);
+  if (setup.dataset.key === key) return;
+  setup.dataset.key = key;
+  setup.hidden = failing.length === 0;
+  if (!failing.length) return;
+
+  const items = failing.map((c) => {
+    const item = el(
+      "div",
+      { className: "setup-item" },
+      el("strong", {}, c.summary),
+      el("small", {}, c.why),
+    );
+    if (c.fix) {
+      const code = el("code", {}, c.fix);
+      const copy = el("button", { textContent: "Copy" });
+      copy.addEventListener("click", () => copyText(c.fix!, code, copy));
+      item.append(el("div", { className: "fix" }, code, copy));
+    }
+    if (c.hint) item.append(el("small", {}, c.hint));
+    return item;
+  });
+
+  const again = el("button", { textContent: "Check again" });
+  again.addEventListener("click", () => {
+    again.textContent = "Checking…";
+    again.disabled = true;
+    // The next snapshot rebuilds the card (or hides it once everything is fixed).
+    setup.dataset.key = "";
+    invoke("refresh");
+  });
+  const settings = el("button", { textContent: "Settings" });
+  settings.addEventListener("click", showSettings);
+
+  setup.replaceChildren(
+    el("h2", {}, "Setup needed"),
+    ...items,
+    el("div", { className: "setup-actions" }, again, settings),
+  );
 }
 
 function showBanner(text: string, kind: "error" | "warn") {

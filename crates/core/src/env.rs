@@ -18,17 +18,26 @@ pub struct ToolEnv {
     pub claude: PathBuf,
 }
 
-impl ToolEnv {
-    /// Resolve the environment. `claude_override` comes from the config file.
-    pub fn discover(claude_override: Option<&Path>) -> Result<Self> {
-        let path = login_path().unwrap_or_else(|| std::env::var_os("PATH").unwrap_or_default());
-        let path = with_fallback_dirs(path);
+/// The PATH to search and hand to child processes: the login shell's PATH
+/// plus common install locations. Slow on macOS (it starts a shell), so
+/// callers should cache it.
+pub fn search_path() -> OsString {
+    let path = login_path().unwrap_or_else(|| std::env::var_os("PATH").unwrap_or_default());
+    with_fallback_dirs(path)
+}
 
+impl ToolEnv {
+    /// Find `claude` on `path`. `claude_override` comes from the config file.
+    pub fn from_path(path: OsString, claude_override: Option<&Path>) -> Result<Self> {
         let claude = match claude_override {
-            Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
-            _ => which(claude_names(), &path).ok_or_else(|| {
-                anyhow!("could not find `claude` on PATH; set its location in Settings")
-            })?,
+            Some(p) if !p.as_os_str().is_empty() => {
+                if !p.is_file() {
+                    return Err(anyhow!("`claude` not found at {}", p.display()));
+                }
+                p.to_path_buf()
+            }
+            _ => which(claude_names(), &path)
+                .ok_or_else(|| anyhow!("`claude` not found on your PATH"))?,
         };
         Ok(Self { path, claude })
     }

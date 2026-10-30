@@ -121,7 +121,7 @@ fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window("main")
 }
 
-fn show_window(app: &AppHandle) {
+pub(crate) fn show_window(app: &AppHandle) {
     let Some(window) = main_window(app) else {
         return;
     };

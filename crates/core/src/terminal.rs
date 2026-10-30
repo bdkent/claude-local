@@ -177,23 +177,23 @@ pub fn build_launch(app: TerminalApp, custom: &str, claude: &Path, t: &Target) -
             "end tell",
         ]),
         Ghostty => open_app(
-            "Ghostty",
+            mac_app_name(app),
             [format!("--working-directory={cwd}"), "-e".into()]
                 .into_iter()
                 .chain(argv),
         ),
         Wezterm => open_app(
-            "WezTerm",
+            mac_app_name(app),
             ["start".into(), "--cwd".into(), cwd.into(), "--".into()]
                 .into_iter()
                 .chain(argv),
         ),
         Kitty => open_app(
-            "kitty",
+            mac_app_name(app),
             ["--directory".into(), cwd.into()].into_iter().chain(argv),
         ),
         Alacritty => open_app(
-            "Alacritty",
+            mac_app_name(app),
             ["--working-directory".into(), cwd.into(), "-e".into()]
                 .into_iter()
                 .chain(argv),
@@ -256,6 +256,75 @@ pub fn build_launch(app: TerminalApp, custom: &str, claude: &Path, t: &Target) -
         }
     };
     Ok(launch)
+}
+
+/// Check that the chosen terminal is installed. `path` is the PATH used to
+/// launch it. The error says what is missing.
+pub fn check_installed(
+    app: TerminalApp,
+    custom: &str,
+    path: &std::ffi::OsString,
+) -> Result<(), String> {
+    use TerminalApp::*;
+    let found = |names: &[&str]| crate::env::which(names, path).is_some();
+    match app {
+        // Always present on their platforms.
+        Terminal | Powershell => Ok(()),
+        Iterm | Ghostty | Wezterm | Kitty | Alacritty => {
+            let name = mac_app_name(app);
+            // `open -Ra` asks Launch Services whether the app exists, wherever it's installed.
+            let installed = Command::new("open")
+                .args(["-Ra", name])
+                .output()
+                .is_ok_and(|o| o.status.success());
+            if installed {
+                Ok(())
+            } else {
+                Err(format!("{} isn't installed", app.label()))
+            }
+        }
+        WindowsTerminal => {
+            if found(&["wt.exe"]) {
+                Ok(())
+            } else {
+                Err("Windows Terminal isn't installed".into())
+            }
+        }
+        XTerminalEmulator => {
+            if found(&["x-terminal-emulator"]) {
+                Ok(())
+            } else {
+                Err("x-terminal-emulator isn't installed".into())
+            }
+        }
+        Custom => {
+            let program = split_args(custom).into_iter().next().unwrap_or_default();
+            if program.is_empty() {
+                return Err("the custom terminal command is empty".into());
+            }
+            let as_path = Path::new(&program);
+            if as_path.is_absolute() && as_path.is_file() || found(&[program.as_str()]) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "`{program}` (your custom terminal command) wasn't found"
+                ))
+            }
+        }
+    }
+}
+
+/// Name `open -a` knows a macOS terminal by.
+fn mac_app_name(app: TerminalApp) -> &'static str {
+    use TerminalApp::*;
+    match app {
+        Iterm => "iTerm",
+        Ghostty => "Ghostty",
+        Wezterm => "WezTerm",
+        Kitty => "kitty",
+        Alacritty => "Alacritty",
+        _ => "Terminal",
+    }
 }
 
 fn osascript(lines: &[&str]) -> Launch {

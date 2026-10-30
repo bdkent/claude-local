@@ -38,6 +38,11 @@ Download the latest build from
 
 Turn on **Launch at login** in Settings so keep-alive is always running.
 
+On startup the app checks for `claude`, `tmux` (macOS, when keep-alive is on)
+and your chosen terminal. If anything is missing, the list opens with a
+**Setup needed** card that says what's missing and how to install it (for
+example `brew install tmux`). The card clears by itself once it's fixed.
+
 ## How it works
 
 Every few seconds (every 3 s while the list is open, every 30 s while it's
