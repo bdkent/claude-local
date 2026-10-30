@@ -381,26 +381,11 @@ fn update_tray(app: &AppHandle, snap: &Snapshot) {
     let tooltip = match &snap.error {
         _ if snap.checks.iter().any(|c| !c.ok) => "Claude Local: setup needed".to_string(),
         Some(_) => "Claude Local: can't list sessions".to_string(),
-        None => {
-            let blocked = snap
-                .sessions
-                .iter()
-                .filter(|s| s.session.state.as_deref() == Some("blocked"))
-                .count();
-            let needs_you = if blocked > 0 {
-                format!(
-                    " · {blocked} need{} you",
-                    if blocked == 1 { "s" } else { "" }
-                )
-            } else {
-                String::new()
-            };
-            format!(
-                "Claude Local: {} background, {} interactive{needs_you}",
-                count(SessionKind::Background),
-                count(SessionKind::Interactive)
-            )
-        }
+        None => format!(
+            "Claude Local: {} background, {} interactive",
+            count(SessionKind::Background),
+            count(SessionKind::Interactive)
+        ),
     };
     let _ = tray.set_tooltip(Some(tooltip));
 }

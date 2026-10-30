@@ -157,7 +157,9 @@ function stateWord(s: SessionView): string {
 const DOTS: Record<string, [string, string]> = {
   running: ["active", "Running: Claude is working"],
   busy: ["active", "Busy: Claude is working"],
-  blocked: ["blocked", "Blocked: waiting for you (for example a permission prompt). Open it to respond."],
+  // In practice `blocked` means the turn ended and Claude is waiting for you,
+  // not an urgent prompt, so it gets the same calm dot as done/idle.
+  blocked: ["resting", "Blocked: Claude's turn ended and it's waiting for your next message"],
   done: ["resting", "Done: finished, waiting for your next message"],
   idle: ["resting", "Idle: waiting for your input"],
   stopped: ["stopped", "Stopped: no process is running. Opening it resumes the session."],
