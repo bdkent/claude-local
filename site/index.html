@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Local: a buddy list for your Claude Code sessions</title>
+    <meta
+      name="description"
+      content="A tiny native tray app for running Claude Code locally. See every session at a glance, keep background agents from idling out, and drop into any of them with a double-click."
+    />
+    <meta property="og:title" content="Claude Local" />
+    <meta
+      property="og:description"
+      content="A buddy list for your local Claude Code sessions. Native tray app for macOS and Windows, built with Tauri 2 and Rust."
+    />
+    <meta property="og:image" content="https://bdkent.github.io/claude-local/og.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/png" href="icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="backdrop" aria-hidden="true"></div>
+
+    <header class="nav">
+      <a class="brand" href="#top">
+        <img src="icon.png" alt="" width="28" height="28" />
+        <span>Claude Local</span>
+      </a>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#engineering">Engineering</a>
+        <a href="https://github.com/bdkent/claude-local" class="nav-gh">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <!-- Hero ------------------------------------------------------------ -->
+      <section class="hero">
+        <div class="hero-copy reveal">
+          <p class="eyebrow"><span class="pulse"></span> For people who run Claude Code all day</p>
+          <h1>Every Claude session.<br /><span class="grad">One tiny window.</span></h1>
+          <p class="lede">
+            A buddy list for your local Claude Code agents. See every session across your projects, keep
+            background agents alive past the 8-hour idle, and drop into any of them with a double-click.
+          </p>
+          <div class="cta">
+            <a class="btn primary" href="https://github.com/bdkent/claude-local/releases/latest">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8m0 0 3-3m-3 3L5 7M3 12.5h10" /></svg>
+              Download
+            </a>
+            <a class="btn ghost" href="https://github.com/bdkent/claude-local">
+              <svg viewBox="0 0 16 16" aria-hidden="true" class="fill">
+                <path
+                  d="M8 .2a8 8 0 0 0-2.5 15.6c.4 0 .5-.2.5-.4v-1.5c-2.2.5-2.7-1-2.7-1-.4-.9-.9-1.2-.9-1.2-.7-.5.1-.5.1-.5.8.1 1.2.8 1.2.8.7 1.3 1.9.9 2.4.7 0-.5.3-.9.5-1.1-1.8-.2-3.6-.9-3.6-4 0-.9.3-1.6.8-2.1-.1-.2-.4-1 .1-2.1 0 0 .7-.2 2.2.8a7.4 7.4 0 0 1 4 0c1.5-1 2.2-.8 2.2-.8.4 1.1.2 1.9.1 2.1.5.6.8 1.3.8 2.1 0 3.1-1.9 3.7-3.6 3.9.3.3.6.8.6 1.5v2.2c0 .2.1.5.6.4A8 8 0 0 0 8 .2Z"
+                />
+              </svg>
+              View source
+            </a>
+          </div>
+          <p class="fineprint">Free &amp; open source · macOS 11+ and Windows 10+ · Native, not Electron</p>
+        </div>
+
+        <!-- Live demo: a working replica of the app ---------------------- -->
+        <div class="stage reveal" aria-label="Interactive demo of the Claude Local window">
+          <div class="menubar">
+            <span class="apple"></span>
+            <span class="mb-app">Unity</span>
+            <span class="mb-item">File</span>
+            <span class="mb-item">Edit</span>
+            <span class="mb-item">Assets</span>
+            <span class="mb-spacer"></span>
+            <button class="tray" id="demo-tray" data-tip="Claude Local lives in your menu bar. Click to toggle.">
+              <img src="icon.png" alt="Claude Local" />
+              <span id="demo-tray-count">3</span>
+            </button>
+            <span class="mb-clock" id="demo-clock">9:41</span>
+          </div>
+
+          <div class="app" id="demo-app">
+            <div class="app-toolbar">
+              <div class="seg" role="tablist">
+                <button class="on" data-kind="all" data-tip="Show all sessions">All</button>
+                <button data-kind="background" data-tip="Only background sessions (claude --bg)">Bg</button>
+                <button data-kind="interactive" data-tip="Only interactive sessions">Interactive</button>
+              </div>
+              <button class="ico" id="demo-new" data-tip="Start a new session. Try it!">＋</button>
+              <button class="ico" data-tip="Refresh now">↻</button>
+            </div>
+            <ul class="app-list" id="demo-list"></ul>
+            <div class="app-status" id="demo-status">keeping 3/3 alive</div>
+          </div>
+
+          <div class="term" id="demo-term" hidden>
+            <div class="term-bar"><i></i><i></i><i></i><span id="demo-term-title">Ghostty</span></div>
+            <pre id="demo-term-body"></pre>
+          </div>
+
+          <div class="tip" id="demo-tip" role="tooltip"></div>
+          <p class="stage-hint">↑ This is live. Hover, filter, double-click a session, or hit ＋.</p>
+        </div>
+      </section>
+
+      <!-- Built with ------------------------------------------------------ -->
+      <section class="stack reveal" aria-label="Built with">
+        <span>Built with</span>
+        <b>Tauri 2</b><i>·</i><b>Rust</b><i>·</i><b>TypeScript</b><i>·</i><b>tmux</b><i>·</i><b>ConPTY</b
+        ><i>·</i><b>GitHub Actions</b>
+      </section>
+
+      <!-- Features -------------------------------------------------------- -->
+      <section id="features" class="section">
+        <div class="section-head reveal">
+          <p class="eyebrow">Features</p>
+          <h2>Built for the way you actually run agents.</h2>
+          <p>
+            Some work can't run in the cloud: a Unity editor that takes minutes to warm up, a real GPU, a
+            local toolchain. Claude Local makes a fleet of local sessions as easy to handle as a chat list.
+          </p>
+        </div>
+        <div class="grid">
+          <article class="card reveal">
+            <div class="card-ico">
+              <svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2" /><circle cx="6" cy="17" r="2" /><path d="M11 7h9M11 17h7" /></svg>
+            </div>
+            <h3>Every session at a glance</h3>
+            <p>
+              Interactive and background sessions, grouped by project, with live busy/idle status. Filter by
+              kind, project or name.
+            </p>
+          </article>
+          <article class="card reveal">
+            <div class="card-ico">
+              <svg viewBox="0 0 24 24">
+                <path d="M10 14a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10a4 4 0 0 0-5.7 0l-2.8 2.8a4 4 0 0 0 5.7 5.7l1.2-1.2" />
+              </svg>
+            </div>
+            <h3>Never idles out</h3>
+            <p>
+              Background sessions idle after 8 hours with nothing attached. Claude Local quietly holds a hidden
+              client on each one, so long-running work keeps running.
+            </p>
+          </article>
+          <article class="card reveal">
+            <div class="card-ico">
+              <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 10 3 2-3 2M12 15h5" /></svg>
+            </div>
+            <h3>Double-click to attach</h3>
+            <p>
+              Opens <code>claude attach</code> in Terminal, iTerm2, Ghostty, WezTerm, kitty, Alacritty, Windows
+              Terminal or your own command. Only installed terminals are offered.
+            </p>
+          </article>
+          <article class="card reveal">
+            <div class="card-ico">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+            </div>
+            <h3>Start agents anywhere</h3>
+            <p>
+              Pick a project folder, name it, write the first prompt. Launch it in the background or in a
+              terminal. Recent folders are remembered.
+            </p>
+          </article>
+          <article class="card reveal">
+            <div class="card-ico">
+              <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>
+            </div>
+            <h3>Deletes that ask twice</h3>
+            <p>
+              Delete asks before it acts. If the session's worktree holds unpushed commits, you see Claude's own
+              warning and must confirm a second time to discard them.
+            </p>
+          </article>
+          <article class="card reveal">
+            <div class="card-ico">
+              <svg viewBox="0 0 24 24"><path d="M12 3 3 20h18L12 3Z" /><path d="M12 10v4M12 17h.01" /></svg>
+            </div>
+            <h3>Checks its own setup</h3>
+            <p>
+              Missing <code>claude</code>, <code>tmux</code> or your terminal? It opens with a setup card,
+              a copy-paste fix, and clears itself once you install it.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- How it works ---------------------------------------------------- -->
+      <section id="how" class="section">
+        <div class="section-head reveal">
+          <p class="eyebrow">How it works</p>
+          <h2>A small Rust core doing careful process work.</h2>
+          <p>
+            The interface is a list. Behind it, the app polls Claude Code, keeps a hidden client attached to
+            every background session, and works out how to open your terminal.
+          </p>
+        </div>
+
+        <div class="flow reveal" aria-label="Architecture">
+          <div class="node">
+            <span class="node-k">Tray app</span>
+            <b>Tauri 2 + Rust</b>
+            <small>polls every 3 s while open, 30 s while hidden</small>
+          </div>
+          <div class="wire"><span>claude agents --json</span></div>
+          <div class="node">
+            <span class="node-k">Reconcile</span>
+            <b>wanted vs. running</b>
+            <small>start missing clients, stop stale ones</small>
+          </div>
+          <div class="wire"><span>tmux -L claude-local</span></div>
+          <div class="node accent">
+            <span class="node-k">Keep-alive</span>
+            <b>hidden <code>claude attach</code></b>
+            <small>one per background session, outlives the app</small>
+          </div>
+        </div>
+
+        <div class="code-wrap reveal">
+          <div class="code-head">
+            <span>crates/core/src/keepalive.rs <em>(simplified)</em></span>
+            <a href="https://github.com/bdkent/claude-local/blob/master/crates/core/src/keepalive.rs">view on GitHub →</a>
+          </div>
+          <pre class="code"><code><span class="c">/// Start a client for every background session that lacks one, and stop</span>
+<span class="c">/// clients whose session has gone away.</span>
+<span class="k">pub fn</span> <span class="f">reconcile</span>(&amp;<span class="k">mut</span> self, env: &amp;<span class="t">ToolEnv</span>, sessions: &amp;[<span class="t">Session</span>]) -&gt; <span class="t">Report</span> {
+    <span class="k">let</span> wanted: <span class="t">HashMap</span>&lt;&amp;<span class="t">str</span>, &amp;<span class="t">Session</span>&gt; = sessions
+        .<span class="f">iter</span>()
+        .<span class="f">filter_map</span>(|s| s.<span class="f">attach_id</span>().<span class="f">map</span>(|id| (id, s)))
+        .<span class="f">collect</span>();
+    <span class="k">let</span> running = self.backend.<span class="f">running</span>()?;
+
+    <span class="k">for</span> id <span class="k">in</span> running.<span class="f">iter</span>().<span class="f">filter</span>(|id| !wanted.<span class="f">contains_key</span>(id.<span class="f">as_str</span>())) {
+        self.backend.<span class="f">stop</span>(id)?;               <span class="c">// session is gone</span>
+    }
+    <span class="k">for</span> (&amp;id, session) <span class="k">in</span> &amp;wanted {
+        <span class="k">if</span> running.<span class="f">contains</span>(id) || self.<span class="f">recently_started</span>(id) { <span class="k">continue</span>; }
+        self.backend.<span class="f">start</span>(env, id, &amp;session.cwd)?; <span class="c">// hidden `claude attach`</span>
+    }
+    <span class="c">// …</span>
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Engineering ----------------------------------------------------- -->
+      <section id="engineering" class="section">
+        <div class="section-head reveal">
+          <p class="eyebrow">Engineering notes</p>
+          <h2>Small app. Sharp edges handled.</h2>
+        </div>
+        <div class="notes">
+          <div class="note reveal">
+            <h3>Native, not Electron</h3>
+            <p>
+              Tauri 2 uses the OS's own webview, so no browser ships inside the app. The whole UI is about
+              15&nbsp;KB of plain TypeScript with no framework; everything else is Rust.
+            </p>
+          </div>
+          <div class="note reveal">
+            <h3>GUI apps can't see your PATH</h3>
+            <p>
+              Apps launched from Finder get a bare <code>/usr/bin:/bin</code>. Claude Local asks your login shell
+              for its real PATH once, with a timeout, so Homebrew's <code>tmux</code> and
+              <code>~/.local/bin/claude</code> just work.
+            </p>
+          </div>
+          <div class="note reveal">
+            <h3>A private tmux server</h3>
+            <p>
+              Keep-alives run on their own socket (<code>tmux -L claude-local</code>). They survive quitting or
+              updating the app and never clutter your <code>tmux ls</code>. Windows uses ConPTY instead.
+            </p>
+          </div>
+          <div class="note reveal">
+            <h3>Fails safe</h3>
+            <p>
+              A failed session listing never triggers cleanup, so one hiccup can't tear down every keep-alive. A
+              destructive delete only runs with the exact values Claude reported, held by the app rather than
+              the page.
+            </p>
+          </div>
+          <div class="note reveal">
+            <h3>Tested where it matters</h3>
+            <p>
+              The Rust core has no UI and runs headless. Its tests drive a real tmux server and fake
+              <code>claude</code> binaries. CI runs on macOS, Windows and Linux.
+            </p>
+          </div>
+          <div class="note reveal">
+            <h3>One tag, two installers</h3>
+            <p>
+              Pushing a <code>v*</code> tag builds a universal macOS <code>.dmg</code> and Windows installers on
+              GitHub Actions and attaches them to a draft release.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Download -------------------------------------------------------- -->
+      <section id="download" class="download reveal">
+        <h2>Get your sessions in one place.</h2>
+        <p>Free, open source, and small enough that you'll forget it's running.</p>
+        <div class="cta center">
+          <a class="btn primary" href="https://github.com/bdkent/claude-local/releases/latest">Download for macOS</a>
+          <a class="btn primary alt" href="https://github.com/bdkent/claude-local/releases/latest">Download for Windows</a>
+        </div>
+        <div class="install">
+          <code><span class="prompt">$</span> brew install tmux <span class="c"># macOS keep-alive needs it</span></code>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p>
+        Made by <a href="https://github.com/bdkent">bdkent</a> ·
+        <a href="https://github.com/bdkent/claude-local">Source on GitHub</a>
+      </p>
+      <p class="disclaimer">
+        An independent project, not affiliated with or endorsed by Anthropic. Claude and Claude Code are
+        trademarks of Anthropic.
+      </p>
+    </footer>
+
+    <script src="demo.js"></script>
+  </body>
+</html>

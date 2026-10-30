@@ -1,8 +1,24 @@
 # Claude Local
 
-A small tray app that lists the Claude Code sessions running on your machine,
-keeps background sessions from idling out, and opens any of them in your
-terminal with one double-click.
+**A buddy list for your local Claude Code sessions.** A small native tray app
+that lists the Claude Code sessions running on your machine, keeps background
+sessions from idling out, and opens any of them in your terminal with one
+double-click.
+
+[**Website**](https://bdkent.github.io/claude-local/) ·
+[**Download**](https://github.com/bdkent/claude-local/releases/latest) ·
+macOS and Windows
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png" />
+  <img
+    src="docs/screenshots/overview-light.png"
+    alt="Three views of Claude Local: the session list grouped by project with a tooltip on the keep-alive link icon; the New session dialog with a project folder, name and first prompt; and the delete confirmation asking before discarding unpushed work."
+  />
+</picture>
+
+<sub>The session list, starting a new session, and the second confirmation
+before discarding unpushed work. Shown with sample data.</sub>
 
 Built for running `claude --bg` sessions locally (for example Unity projects
 that need a real GPU and a warm editor) and driving them through Remote
@@ -95,8 +111,14 @@ Layout:
 crates/core/   session parsing, PATH discovery, keep-alive backends, terminal launchers (no UI)
 src-tauri/     the tray app: polling loop, tray icon, window, commands
 ui/            the list window (TypeScript + Vite, no framework)
-scripts/       icon generator
+site/          the GitHub Pages website
+docs/          README screenshots
+scripts/       icon generator, screenshot compositor
 ```
+
+The project website lives in `site/` (plain HTML, CSS and JS, no build step)
+and is published to GitHub Pages by the **Pages** workflow whenever `site/`
+changes.
 
 To regenerate icons: `python3 scripts/make-icons.py && npx tauri icon src-tauri/icons/app-icon.png -o src-tauri/icons`
 (then delete the `android/`, `ios/` and `Square*` outputs).
