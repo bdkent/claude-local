@@ -34,6 +34,7 @@ interface Snapshot {
   keepaliveEnabled: boolean;
   keepaliveErrors: string[];
   checks: Check[];
+  terminalLabel: string;
   updatedAt: number;
 }
 
@@ -106,6 +107,17 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/** Give an element a hover/focus tooltip (see the tooltip section below). */
+function withTip<T extends HTMLElement>(node: T, text: string): T {
+  node.dataset.tip = text;
+  return node;
+}
+
+/** Name of the configured terminal, for tooltips. */
+function terminalLabel(): string {
+  return snapshot?.terminalLabel ?? "your terminal";
+}
+
 function visibleSessions(all: SessionView[]): SessionView[] {
   const q = search.trim().toLowerCase();
   return all.filter(
@@ -125,6 +137,12 @@ async function openSession(s: SessionView) {
   }
 }
 
+const STATUS_TIPS: Record<string, string> = {
+  busy: "Busy: Claude is working",
+  idle: "Idle: waiting for your input",
+  unknown: "Status unknown",
+};
+
 const LINK_ICON =
   '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 9.5a3 3 0 0 0 4.2 0l2.1-2.1a3 3 0 0 0-4.2-4.2l-.9.9M9.5 6.5a3 3 0 0 0-4.2 0L3.2 8.6a3 3 0 0 0 4.2 4.2l.9-.9"/></svg>';
 
@@ -136,16 +154,20 @@ function sessionRow(s: SessionView): HTMLLIElement {
   const dotClass = status === "busy" ? "busy" : status === "idle" ? "idle" : "unknown";
   const meta = [s.kind === "background" ? "bg" : s.kind, s.state ?? status, ago(s.startedAt)].join(" · ");
 
-  const row = el(
-    "li",
-    {
-      className: `session ${s.attachable ? "attachable" : "inert"}`,
-      tabIndex: 0,
-      title: s.attachable
-        ? `${s.cwd}\nDouble-click to open in your terminal`
-        : `${s.cwd}\nInteractive sessions live in the terminal that started them`,
-    },
-    el("span", { className: `dot ${dotClass}`, title: status }),
+  const kind = s.kind === "background" ? "Background session" : s.kind === "interactive" ? "Interactive session" : "Session";
+  const started = new Date(s.startedAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const row = withTip(
+    el("li", { className: `session ${s.attachable ? "attachable" : "inert"}`, tabIndex: 0 }),
+    [
+      s.cwd,
+      `${kind}${s.state ? ` · ${s.state}` : ""} · started ${started}`,
+      s.attachable
+        ? `Double-click to open in ${terminalLabel()}`
+        : "Interactive sessions live in the terminal that started them",
+    ].join("\n"),
+  );
+  row.append(
+    withTip(el("span", { className: `dot ${dotClass}` }), STATUS_TIPS[dotClass]),
     el(
       "span",
       { className: "label" },
@@ -154,21 +176,26 @@ function sessionRow(s: SessionView): HTMLLIElement {
     ),
   );
   if (s.keptAlive) {
-    const link = el("span", {
-      className: "keepalive",
-      title: "Kept alive: a hidden client is attached so this session won't idle out",
-      ariaLabel: "Kept alive",
-    });
+    const link = withTip(
+      el("span", { className: "keepalive", ariaLabel: "Kept alive" }),
+      "Kept alive: Claude Local keeps a hidden client attached so this session won't idle out after 8 hours",
+    );
     link.innerHTML = LINK_ICON;
     row.append(link);
   }
   if (s.attachable) {
-    const open = el("button", { className: "open", textContent: "Open", title: "Open in terminal" });
+    const open = withTip(
+      el("button", { className: "open", textContent: "Open" }),
+      `Open in ${terminalLabel()} (claude attach ${s.id})`,
+    );
     open.addEventListener("click", (e) => {
       e.stopPropagation();
       openSession(s);
     });
-    const del = el("button", { className: "delete", title: "Delete session…", ariaLabel: "Delete session" });
+    const del = withTip(
+      el("button", { className: "delete", ariaLabel: "Delete session" }),
+      "Delete this session… (asks first)",
+    );
     del.innerHTML = TRASH_ICON;
     del.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -208,26 +235,15 @@ function render() {
   const groups = new Map<string, SessionView[]>();
   for (const s of shown) groups.set(s.project, [...(groups.get(s.project) ?? []), s]);
 
-  $("#groups").replaceChildren(
-    ...[...groups].map(([project, items]) => {
-      const isCollapsed = collapsed.has(project);
-      const header = el(
-        "button",
-        { className: "group-header", ariaExpanded: String(!isCollapsed) },
-        el("span", { className: "caret" }, isCollapsed ? "▸" : "▾"),
-        `${project} `,
-        el("span", { className: "count" }, `(${items.length})`),
-      );
-      header.addEventListener("click", () => {
-        if (collapsed.has(project)) collapsed.delete(project);
-        else collapsed.add(project);
-        prefs.save("collapsed", [...collapsed]);
-        render();
-      });
-      const list = el("ul", { className: "sessions" }, ...(isCollapsed ? [] : items.map(sessionRow)));
-      return el("li", { className: "group" }, header, list);
-    }),
-  );
+  // Rebuild rows only when what they show changes (ages tick once a minute),
+  // so hover tooltips and keyboard focus survive routine polls.
+  const groupsEl = $("#groups");
+  const rowsKey = JSON.stringify([shown, [...collapsed], terminalLabel(), Math.floor(Date.now() / 60_000)]);
+  if (groupsEl.dataset.key !== rowsKey) {
+    groupsEl.dataset.key = rowsKey;
+    renderGroups(groupsEl, groups);
+    if (tipTarget && !tipTarget.isConnected) hideTip();
+  }
 
   const failing = snapshot.checks.filter((c) => !c.ok);
   renderSetup(failing);
@@ -249,6 +265,32 @@ function render() {
       : snapshot.keepaliveEnabled
         ? `${time} · keeping ${kept}/${bg.length} alive`
         : `${time} · keep-alive off`;
+}
+
+function renderGroups(container: HTMLElement, groups: Map<string, SessionView[]>) {
+  container.replaceChildren(
+    ...[...groups].map(([project, items]) => {
+      const isCollapsed = collapsed.has(project);
+      const header = withTip(
+        el(
+          "button",
+          { className: "group-header", ariaExpanded: String(!isCollapsed) },
+          el("span", { className: "caret" }, isCollapsed ? "▸" : "▾"),
+          `${project} `,
+          el("span", { className: "count" }, `(${items.length})`),
+        ),
+        `${isCollapsed ? "Expand" : "Collapse"} ${project}`,
+      );
+      header.addEventListener("click", () => {
+        if (collapsed.has(project)) collapsed.delete(project);
+        else collapsed.add(project);
+        prefs.save("collapsed", [...collapsed]);
+        render();
+      });
+      const list = el("ul", { className: "sessions" }, ...(isCollapsed ? [] : items.map(sessionRow)));
+      return el("li", { className: "group" }, header, list);
+    }),
+  );
 }
 
 function showFlash(text: string) {
@@ -292,7 +334,7 @@ function renderSetup(failing: Check[]) {
     );
     if (c.fix) {
       const code = el("code", {}, c.fix);
-      const copy = el("button", { textContent: "Copy" });
+      const copy = withTip(el("button", { textContent: "Copy" }), "Copy this command, then paste it into a terminal");
       copy.addEventListener("click", () => copyText(c.fix!, code, copy));
       item.append(el("div", { className: "fix" }, code, copy));
     }
@@ -300,7 +342,7 @@ function renderSetup(failing: Check[]) {
     return item;
   });
 
-  const again = el("button", { textContent: "Check again" });
+  const again = withTip(el("button", { textContent: "Check again" }), "Look for the missing tools again");
   again.addEventListener("click", () => {
     again.textContent = "Checking…";
     again.disabled = true;
@@ -308,7 +350,7 @@ function renderSetup(failing: Check[]) {
     setup.dataset.key = "";
     invoke("refresh");
   });
-  const settings = el("button", { textContent: "Settings" });
+  const settings = withTip(el("button", { textContent: "Settings" }), "Open Settings");
   settings.addEventListener("click", showSettings);
 
   setup.replaceChildren(
@@ -459,6 +501,9 @@ $("#choose-folder").addEventListener("click", async () => {
 $("#new-session-button").addEventListener("click", showNewSession);
 $("#cancel-new-session").addEventListener("click", () => dialog.close());
 
+const isMac = navigator.userAgent.includes("Mac");
+newField<HTMLTextAreaElement>("prompt").dataset.tip = `Optional. Sent as the session's first message. ${isMac ? "⌘" : "Ctrl+"}Enter starts the session.`;
+
 // Cmd/Ctrl+Enter in the prompt starts the session.
 newField<HTMLTextAreaElement>("prompt").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) newForm.requestSubmit();
@@ -516,6 +561,7 @@ function confirmDelete(s: SessionView) {
   $("#delete-claude").hidden = true;
   $("#delete-error").hidden = true;
   deleteButton.textContent = "Delete";
+  deleteButton.dataset.tip = `Runs claude rm ${s.id}`;
   deleteButton.disabled = false;
   deleteDialog.showModal();
   // Safer default: Enter cancels until the user moves to Delete.
@@ -548,6 +594,7 @@ deleteForm.addEventListener("submit", async (e) => {
     claudeSays.hidden = false;
     deleteButton.disabled = false;
     deleteButton.textContent = "Discard unpushed work and delete";
+    deleteButton.dataset.tip = "Runs claude rm again with the discard value Claude reported above. The unpushed work is lost.";
     $<HTMLButtonElement>("#cancel-delete").focus();
   } catch (err) {
     const box = $("#delete-error");
@@ -557,6 +604,65 @@ deleteForm.addEventListener("submit", async (e) => {
     deleteButton.textContent = label;
   }
 });
+
+// --- tooltips ------------------------------------------------------------
+// One floating element for every [data-tip]. Native `title` tooltips are slow,
+// look different per OS, never show for keyboard focus, and sit underneath
+// modal dialogs.
+
+const tooltip = el("div", { className: "tooltip", role: "tooltip" });
+let tipTarget: HTMLElement | null = null;
+let tipTimer: number | undefined;
+
+function showTip(target: HTMLElement) {
+  const text = target.dataset.tip;
+  if (!text || !target.isConnected) return;
+  // A modal dialog sits in the top layer; the tooltip must live inside it to show.
+  (target.closest("dialog") ?? document.body).append(tooltip);
+  tooltip.textContent = text;
+  tooltip.classList.add("visible");
+
+  const margin = 6;
+  const r = target.getBoundingClientRect();
+  const t = tooltip.getBoundingClientRect();
+  let top = r.bottom + margin;
+  if (top + t.height > window.innerHeight - margin) top = r.top - t.height - margin;
+  const left = Math.min(
+    Math.max(margin, r.left + r.width / 2 - t.width / 2),
+    window.innerWidth - t.width - margin,
+  );
+  tooltip.style.top = `${Math.max(margin, top)}px`;
+  tooltip.style.left = `${left}px`;
+}
+
+function hideTip() {
+  clearTimeout(tipTimer);
+  tipTarget = null;
+  tooltip.classList.remove("visible");
+}
+
+function scheduleTip(target: HTMLElement | null) {
+  if (target === tipTarget) return;
+  hideTip();
+  if (!target) return;
+  tipTarget = target;
+  tipTimer = window.setTimeout(() => showTip(target), 450);
+}
+
+document.addEventListener("mouseover", (e) => {
+  scheduleTip((e.target as Element).closest<HTMLElement>("[data-tip]"));
+});
+document.addEventListener("mouseout", (e) => {
+  if (tipTarget && !tipTarget.contains(e.relatedTarget as Node | null)) hideTip();
+});
+document.addEventListener("focusin", (e) => {
+  const target = e.target as HTMLElement;
+  if (target.matches(":focus-visible")) scheduleTip(target.closest<HTMLElement>("[data-tip]"));
+});
+document.addEventListener("focusout", hideTip);
+for (const type of ["mousedown", "keydown", "scroll", "blur"]) {
+  window.addEventListener(type, hideTip, true);
+}
 
 // --- startup -------------------------------------------------------------
 

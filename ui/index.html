@@ -10,23 +10,23 @@
     <main id="list-view">
       <header class="toolbar">
         <div class="segmented" role="tablist" aria-label="Session kind">
-          <button data-kind="all" class="active">All</button>
-          <button data-kind="background">Bg</button>
-          <button data-kind="interactive">Interactive</button>
+          <button data-kind="all" class="active" data-tip="Show all sessions">All</button>
+          <button data-kind="background" data-tip="Show only background sessions (started with claude --bg)">Bg</button>
+          <button data-kind="interactive" data-tip="Show only interactive sessions (running in a terminal window)">Interactive</button>
         </div>
-        <button id="new-session-button" class="icon" title="New session" aria-label="New session">＋</button>
-        <button id="refresh" class="icon" title="Refresh" aria-label="Refresh">↻</button>
-        <button id="open-settings" class="icon" title="Settings" aria-label="Settings">⚙</button>
+        <button id="new-session-button" class="icon" data-tip="Start a new session in a project folder" aria-label="New session">＋</button>
+        <button id="refresh" class="icon" data-tip="Refresh the list now" aria-label="Refresh">↻</button>
+        <button id="open-settings" class="icon" data-tip="Settings" aria-label="Settings">⚙</button>
       </header>
       <div class="filters">
-        <select id="project" aria-label="Project"></select>
-        <input id="search" type="search" placeholder="Filter by name" aria-label="Filter by name" />
+        <select id="project" aria-label="Project" data-tip="Show sessions from one project folder"></select>
+        <input id="search" type="search" placeholder="Filter by name" aria-label="Filter by name" data-tip="Filter by session or project name" />
       </div>
       <section id="setup" class="setup" hidden></section>
       <div id="banner" class="banner" hidden></div>
       <ul id="groups" class="groups"></ul>
       <p id="empty" class="empty" hidden></p>
-      <footer id="status" class="status"></footer>
+      <footer id="status" class="status" data-tip="When the list last refreshed, and how many background sessions are being kept alive"></footer>
     </main>
 
     <main id="settings-view" hidden>
@@ -36,29 +36,29 @@
       <form id="settings" class="settings">
         <label>
           Open sessions in
-          <select name="terminal"></select>
+          <select name="terminal" data-tip="The terminal app used to open a session or start an interactive one. Only installed terminals are listed."></select>
         </label>
         <label id="custom-row">
           Custom command
-          <input name="customTerminal" placeholder="my-term --cwd {cwd} -e {args}" spellcheck="false" />
+          <input name="customTerminal" placeholder="my-term --cwd {cwd} -e {args}" spellcheck="false" data-tip="A command that opens a terminal. {args} becomes the claude command, {cwd} the project folder, {name} the session name, {command} a full shell line." />
           <small>Placeholders: {args} (the claude command), {cwd}, {name}, {command} (a full shell line)</small>
         </label>
-        <label class="check">
+        <label class="check" data-tip="Claude Code idles a background session after 8 hours with nothing attached. This keeps a hidden client attached to each one (shown by the link icon).">
           <input type="checkbox" name="keepalive" />
           Keep background sessions alive
         </label>
         <small class="hint">Holds a hidden <code>claude attach</code> on each background session so it never idles out.</small>
-        <label class="check">
+        <label class="check" data-tip="Default for the “Start in background” box in the New session dialog">
           <input type="checkbox" name="newSessionBackground" />
           Start new sessions in the background
         </label>
-        <label class="check">
+        <label class="check" data-tip="Start Claude Local when you log in, so background sessions are always kept alive">
           <input type="checkbox" name="autostart" />
           Launch at login
         </label>
         <label>
           <span>Path to <code>claude</code></span>
-          <input name="claudePath" placeholder="Search PATH" spellcheck="false" />
+          <input name="claudePath" placeholder="Search PATH" spellcheck="false" data-tip="Leave empty to find claude on your PATH. Set it if claude is installed somewhere unusual." />
           <small id="claude-resolved"></small>
         </label>
         <p id="settings-error" class="banner error" hidden></p>
@@ -76,20 +76,20 @@
         <label>
           Project folder
           <span class="row">
-            <select name="cwd" required></select>
-            <button type="button" id="choose-folder">Choose…</button>
+            <select name="cwd" required data-tip="The folder the session starts in. Recent folders and folders with a running session are listed."></select>
+            <button type="button" id="choose-folder" data-tip="Pick any folder">Choose…</button>
           </span>
           <small id="cwd-path"></small>
         </label>
         <label>
           Name
-          <input name="name" placeholder="e.g. fix-save-bug" spellcheck="false" autocomplete="off" />
+          <input name="name" placeholder="e.g. fix-save-bug" spellcheck="false" autocomplete="off" data-tip="Optional. Shown in this list and in Claude's /resume." />
         </label>
         <label>
           First prompt
-          <textarea name="prompt" rows="5" placeholder="What should Claude work on?"></textarea>
+          <textarea name="prompt" rows="5" placeholder="What should Claude work on?" data-tip="Optional. Sent as the session's first message."></textarea>
         </label>
-        <label class="check">
+        <label class="check" data-tip="On: runs claude --bg in that folder and keeps it alive. Off: opens your terminal running claude there.">
           <input type="checkbox" name="background" />
           Start in background
         </label>
@@ -110,7 +110,7 @@
         <p id="delete-error" class="banner error" hidden></p>
         <div class="actions">
           <button type="button" id="cancel-delete">Cancel</button>
-          <button type="submit" class="danger" id="confirm-delete-button">Delete</button>
+          <button type="submit" class="danger" id="confirm-delete-button" data-tip="Runs claude rm for this session">Delete</button>
         </div>
       </form>
     </dialog>

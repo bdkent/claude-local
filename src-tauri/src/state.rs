@@ -57,6 +57,8 @@ pub struct Snapshot {
     pub keepalive_errors: Vec<String>,
     /// Dependency checks; failing ones are shown as a "Setup needed" card.
     pub checks: Vec<Check>,
+    /// The configured terminal's name, for "Open in …" tooltips.
+    pub terminal_label: String,
     /// Unix time in milliseconds.
     pub updated_at: u64,
 }
@@ -181,6 +183,10 @@ impl AppState {
         let config = self.config();
         let mut snap = Snapshot {
             keepalive_enabled: config.keepalive,
+            terminal_label: match config.terminal {
+                TerminalApp::Custom => "your terminal".into(),
+                app => app.label().into(),
+            },
             updated_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
