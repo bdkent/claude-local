@@ -67,12 +67,34 @@ impl TerminalApp {
     }
 }
 
-/// The session to open.
+/// What to run in the new terminal: `claude <args>` inside `cwd`.
 #[derive(Debug, Clone)]
-pub struct Target<'a> {
-    pub id: &'a str,
-    pub cwd: &'a str,
-    pub name: &'a str,
+pub struct Target {
+    pub cwd: String,
+    /// Window or tab title, where the terminal supports one.
+    pub title: String,
+    /// Arguments after `claude`.
+    pub args: Vec<String>,
+}
+
+impl Target {
+    /// `claude attach <id>` for an existing background session.
+    pub fn attach(id: &str, cwd: &str, title: &str) -> Self {
+        Self {
+            cwd: cwd.into(),
+            title: title.into(),
+            args: vec!["attach".into(), id.into()],
+        }
+    }
+
+    /// A fresh interactive session, optionally named and with a first prompt.
+    pub fn new_session(cwd: &str, name: Option<&str>, prompt: Option<&str>) -> Self {
+        Self {
+            cwd: cwd.into(),
+            title: name.unwrap_or("claude").into(),
+            args: crate::claude::new_session_args(name, prompt),
+        }
+    }
 }
 
 /// A fully resolved process to spawn.
@@ -117,24 +139,24 @@ impl Launch {
 pub fn build_launch(app: TerminalApp, custom: &str, claude: &Path, t: &Target) -> Result<Launch> {
     use TerminalApp::*;
     let claude_str = claude.to_string_lossy().into_owned();
-    // `claude attach <id>` as argv, wrapping batch files for Windows.
-    let attach_argv: Vec<String> = if is_batch_file(claude) {
-        vec![
-            "cmd.exe".into(),
-            "/c".into(),
-            claude_str.clone(),
-            "attach".into(),
-            t.id.into(),
-        ]
+    let cwd = t.cwd.as_str();
+    // `claude <args>` as argv, wrapping batch files for Windows.
+    let mut argv: Vec<String> = if is_batch_file(claude) {
+        vec!["cmd.exe".into(), "/c".into(), claude_str.clone()]
     } else {
-        vec![claude_str.clone(), "attach".into(), t.id.into()]
+        vec![claude_str.clone()]
     };
-    // The same, as a line typed into a POSIX shell.
+    argv.extend(t.args.iter().cloned());
+    // The same, as a line typed into the user's shell. Single-quoted strings
+    // (including multi-line prompts) parse the same in sh, bash, zsh and fish.
     let shell_line = format!(
-        "cd {} && {} attach {}",
-        shell_quote(t.cwd),
-        shell_quote(&claude_str),
-        shell_quote(t.id)
+        "cd {} && {}",
+        shell_quote(cwd),
+        std::iter::once(&claude_str)
+            .chain(&t.args)
+            .map(|a| shell_quote(a))
+            .collect::<Vec<_>>()
+            .join(" ")
     );
 
     let launch = match app {
@@ -156,74 +178,80 @@ pub fn build_launch(app: TerminalApp, custom: &str, claude: &Path, t: &Target) -
         ]),
         Ghostty => open_app(
             "Ghostty",
-            [format!("--working-directory={}", t.cwd), "-e".into()]
+            [format!("--working-directory={cwd}"), "-e".into()]
                 .into_iter()
-                .chain(attach_argv),
+                .chain(argv),
         ),
         Wezterm => open_app(
             "WezTerm",
-            ["start".into(), "--cwd".into(), t.cwd.into(), "--".into()]
+            ["start".into(), "--cwd".into(), cwd.into(), "--".into()]
                 .into_iter()
-                .chain(attach_argv),
+                .chain(argv),
         ),
         Kitty => open_app(
             "kitty",
-            ["--directory".into(), t.cwd.into()]
-                .into_iter()
-                .chain(attach_argv),
+            ["--directory".into(), cwd.into()].into_iter().chain(argv),
         ),
         Alacritty => open_app(
             "Alacritty",
-            ["--working-directory".into(), t.cwd.into(), "-e".into()]
+            ["--working-directory".into(), cwd.into(), "-e".into()]
                 .into_iter()
-                .chain(attach_argv),
+                .chain(argv),
         ),
+        // wt treats a bare `;` as "next command", so escape it in arguments.
         WindowsTerminal => Launch::new(
             "wt.exe",
-            ["-w", "0", "new-tab", "--title", t.name, "-d", t.cwd]
+            ["-w", "0", "new-tab", "--title", &t.title, "-d", cwd]
                 .into_iter()
                 .map(String::from)
-                .chain(attach_argv),
+                .chain(argv.into_iter().map(|a| a.replace(';', "\\;"))),
         ),
         Powershell => {
+            let command = std::iter::once("&".to_string())
+                .chain(
+                    std::iter::once(&claude_str)
+                        .chain(&t.args)
+                        .map(|a| powershell_string(a)),
+                )
+                .collect::<Vec<_>>()
+                .join(" ");
             let mut l = Launch::new(
                 "powershell.exe",
-                [
-                    "-NoExit".to_string(),
-                    "-Command".into(),
-                    format!(
-                        "& {} attach {}",
-                        powershell_string(&claude_str),
-                        powershell_string(t.id)
-                    ),
-                ],
+                ["-NoExit".to_string(), "-Command".into(), command],
             );
-            l.cwd = Some(t.cwd.into());
+            l.cwd = Some(cwd.into());
             l.new_console = true;
             l
         }
         XTerminalEmulator => {
             let mut l = Launch::new(
                 "x-terminal-emulator",
-                ["-e".to_string()].into_iter().chain(attach_argv),
+                ["-e".to_string()].into_iter().chain(argv),
             );
-            l.cwd = Some(t.cwd.into());
+            l.cwd = Some(cwd.into());
             l
         }
         Custom => {
             let parts = split_args(custom);
-            let Some((program, args)) = parts.split_first() else {
+            if parts.is_empty() {
                 bail!("the custom terminal command is empty; set it in Settings");
-            };
-            let fill = |s: &str| {
-                s.replace("{claude}", &claude_str)
-                    .replace("{id}", t.id)
-                    .replace("{cwd}", t.cwd)
-                    .replace("{name}", t.name)
-                    .replace("{command}", &shell_line)
-            };
-            let mut l = Launch::new(&fill(program), args.iter().map(|a| fill(a)));
-            l.cwd = Some(t.cwd.into());
+            }
+            // `{args}` as its own word splices in the whole claude argv.
+            let filled: Vec<String> = parts
+                .iter()
+                .flat_map(|p| {
+                    if p == "{args}" {
+                        argv.clone()
+                    } else {
+                        vec![p
+                            .replace("{cwd}", cwd)
+                            .replace("{name}", &t.title)
+                            .replace("{command}", &shell_line)]
+                    }
+                })
+                .collect();
+            let mut l = Launch::new(&filled[0], filled[1..].iter().cloned());
+            l.cwd = Some(cwd.into());
             l
         }
     };
@@ -263,7 +291,11 @@ pub fn shell_quote(s: &str) -> String {
 }
 
 fn applescript_string(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    let escaped = s
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n");
+    format!("\"{escaped}\"")
 }
 
 fn powershell_string(s: &str) -> String {
@@ -316,12 +348,12 @@ fn new_console(_cmd: &mut Command) {}
 mod tests {
     use super::*;
 
-    fn target() -> Target<'static> {
-        Target {
-            id: "3b9e1c07",
-            cwd: "/Users/you/my projects/starship",
-            name: "starship-export",
-        }
+    fn target() -> Target {
+        Target::attach(
+            "3b9e1c07",
+            "/Users/you/my projects/starship",
+            "starship-export",
+        )
     }
 
     #[test]
@@ -369,11 +401,7 @@ mod tests {
             TerminalApp::WindowsTerminal,
             "",
             Path::new(r"C:\Users\me\AppData\Roaming\npm\claude.cmd"),
-            &Target {
-                id: "abc",
-                cwd: r"C:\dev\game",
-                name: "n",
-            },
+            &Target::attach("abc", r"C:\dev\game", "n"),
         )
         .unwrap();
         assert_eq!(l.program, "wt.exe");
@@ -393,7 +421,7 @@ mod tests {
     fn custom_fills_placeholders() {
         let l = build_launch(
             TerminalApp::Custom,
-            r#"my-term --title "{name}" -- {claude} attach {id}"#,
+            r#"my-term --title "{name}" -- {args}"#,
             Path::new("/bin/claude"),
             &target(),
         )
@@ -411,6 +439,33 @@ mod tests {
             ]
         );
         assert!(build_launch(TerminalApp::Custom, "  ", Path::new("c"), &target()).is_err());
+    }
+
+    #[test]
+    fn new_session_prompt_survives_every_route() {
+        let t = Target::new_session("/p", Some("fix shaders"), Some("it's red;\nfix it"));
+        let claude = Path::new("/bin/claude");
+
+        let ghostty = build_launch(TerminalApp::Ghostty, "", claude, &t).unwrap();
+        assert_eq!(
+            &ghostty.args[5..],
+            ["/bin/claude", "--name", "fix shaders", "it's red;\nfix it"]
+        );
+
+        let terminal = build_launch(TerminalApp::Terminal, "", claude, &t).unwrap();
+        assert!(terminal.args.contains(
+            &r#"do script "cd /p && /bin/claude --name 'fix shaders' 'it'\\''s red;\nfix it'""#
+                .to_string()
+        ));
+
+        let wt = build_launch(TerminalApp::WindowsTerminal, "", claude, &t).unwrap();
+        assert_eq!(wt.args.last().unwrap(), "it's red\\;\nfix it");
+
+        let ps = build_launch(TerminalApp::Powershell, "", claude, &t).unwrap();
+        assert_eq!(
+            ps.args[2],
+            "& '/bin/claude' '--name' 'fix shaders' 'it''s red;\nfix it'"
+        );
     }
 
     #[test]

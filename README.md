@@ -18,6 +18,13 @@ Control.
   run `claude attach <id>` in Terminal, iTerm2, Ghostty, WezTerm, kitty,
   Alacritty, Windows Terminal, PowerShell, or a custom command. The hidden
   keep-alive stays attached alongside it.
+- **New session.** Hit **＋**, pick a project folder (recent and active ones
+  are listed, or choose any folder), give it a name and a first prompt.
+  **Start in background** runs `claude --bg --name … "prompt"` there.
+  Unchecked, it opens your terminal running `claude --name … "prompt"`. The
+  checkbox default is a setting. The folder must already be trusted by Claude
+  Code (run `claude` there once); otherwise Claude's error is shown in the
+  dialog.
 
 ## Install
 
@@ -53,11 +60,12 @@ that fails, set the path to `claude` in Settings.
 
 Settings are stored in `~/Library/Application Support/claude-local/config.json`
 on macOS and `%APPDATA%\claude-local\config.json` on Windows. The custom
-terminal command accepts `{claude}`, `{id}`, `{cwd}`, `{name}`, and `{command}`
-(a full `cd … && claude attach …` line), for example:
+terminal command accepts `{args}` (the whole `claude …` command, as its own
+word), `{cwd}`, `{name}`, and `{command}` (a full `cd … && claude …` line for
+a shell), for example:
 
 ```
-open -na Ghostty --args -e {claude} attach {id}
+open -na Ghostty --args --working-directory={cwd} -e {args}
 ```
 
 ## Development

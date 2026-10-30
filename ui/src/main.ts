@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open as pickFolder } from "@tauri-apps/plugin-dialog";
 
 type Kind = "interactive" | "background" | "other";
 
@@ -33,6 +34,8 @@ interface Config {
   claudePath: string;
   pollVisibleSecs: number;
   pollHiddenSecs: number;
+  newSessionBackground: boolean;
+  recentProjects: string[];
 }
 
 interface SettingsView {
@@ -71,6 +74,8 @@ let snapshot: Snapshot | null = null;
 let kindFilter: KindFilter = prefs.load("kind", "all");
 let projectFilter: string = prefs.load("project", "");
 let search = "";
+// A short-lived message in the footer, e.g. after starting a session.
+let flash: { text: string; until: number } | null = null;
 const collapsed = new Set<string>(prefs.load<string[]>("collapsed", []));
 
 function ago(ms: number): string {
@@ -205,9 +210,19 @@ function render() {
   const bg = sessions.filter((s) => s.kind === "background");
   const kept = bg.filter((s) => s.keptAlive).length;
   const time = new Date(snapshot.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  $("#status").textContent = snapshot.keepaliveEnabled
-    ? `${time} · keeping ${kept}/${bg.length} alive`
-    : `${time} · keep-alive off`;
+  $("#status").textContent =
+    flash && Date.now() < flash.until
+      ? flash.text
+      : snapshot.keepaliveEnabled
+        ? `${time} · keeping ${kept}/${bg.length} alive`
+        : `${time} · keep-alive off`;
+}
+
+function showFlash(text: string) {
+  const ms = 6000;
+  flash = { text, until: Date.now() + ms };
+  render();
+  setTimeout(render, ms + 50);
 }
 
 function showBanner(text: string, kind: "error" | "warn") {
@@ -252,6 +267,7 @@ $("#refresh").addEventListener("click", () => invoke("refresh"));
 // --- settings ------------------------------------------------------------
 
 const form = $<HTMLFormElement>("#settings");
+let loadedConfig: Config | null = null;
 const field = <T extends HTMLElement>(name: string) => form.elements.namedItem(name) as unknown as T;
 
 function syncCustomRow() {
@@ -260,17 +276,18 @@ function syncCustomRow() {
 
 async function showSettings() {
   const s = await invoke<SettingsView>("get_settings");
+  loadedConfig = s.config;
   const terminal = field<HTMLSelectElement>("terminal");
   terminal.replaceChildren(...s.terminals.map((t) => el("option", { value: t.value, textContent: t.label })));
   terminal.value = s.config.terminal;
   field<HTMLInputElement>("customTerminal").value = s.config.customTerminal;
   field<HTMLInputElement>("keepalive").checked = s.config.keepalive;
+  field<HTMLInputElement>("newSessionBackground").checked = s.config.newSessionBackground;
   field<HTMLInputElement>("autostart").checked = s.autostart;
   field<HTMLInputElement>("claudePath").value = s.config.claudePath;
   $("#claude-resolved").textContent = s.envError ?? (s.claudeResolved ? `Using ${s.claudeResolved}` : "");
   $("#config-path").textContent = s.configPath ? `Config: ${s.configPath}` : "";
   $("#settings-error").hidden = true;
-  form.dataset.poll = JSON.stringify([s.config.pollVisibleSecs, s.config.pollHiddenSecs]);
   syncCustomRow();
   $("#list-view").hidden = true;
   $("#settings-view").hidden = false;
@@ -287,14 +304,15 @@ $("#cancel-settings").addEventListener("click", hideSettings);
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const [pollVisibleSecs, pollHiddenSecs] = JSON.parse(form.dataset.poll ?? "[3,30]") as number[];
+  if (!loadedConfig) return;
+  // Start from what was loaded so fields this form doesn't show are kept.
   const config: Config = {
+    ...loadedConfig,
     terminal: field<HTMLSelectElement>("terminal").value,
     customTerminal: field<HTMLInputElement>("customTerminal").value,
     keepalive: field<HTMLInputElement>("keepalive").checked,
+    newSessionBackground: field<HTMLInputElement>("newSessionBackground").checked,
     claudePath: field<HTMLInputElement>("claudePath").value.trim(),
-    pollVisibleSecs,
-    pollHiddenSecs,
   };
   try {
     await invoke("save_settings", { settings: { config, autostart: field<HTMLInputElement>("autostart").checked } });
@@ -303,6 +321,84 @@ form.addEventListener("submit", async (e) => {
     const box = $("#settings-error");
     box.textContent = String(err);
     box.hidden = false;
+  }
+});
+
+// --- new session ---------------------------------------------------------
+
+const dialog = $<HTMLDialogElement>("#new-session");
+const newForm = $<HTMLFormElement>("#new-session-form");
+const newField = <T extends HTMLElement>(name: string) => newForm.elements.namedItem(name) as unknown as T;
+const cwdSelect = newField<HTMLSelectElement>("cwd");
+
+const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+
+function setFolders(folders: string[], selected?: string) {
+  cwdSelect.replaceChildren(...folders.map((f) => el("option", { value: f, textContent: basename(f), title: f })));
+  if (selected) cwdSelect.value = selected;
+  $("#cwd-path").textContent = cwdSelect.value;
+}
+
+async function showNewSession() {
+  const d = await invoke<{ projects: string[]; background: boolean }>("new_session_defaults");
+  // Default to the project the list is filtered to, if any.
+  const preferred = d.projects.find((p) => basename(p) === projectFilter);
+  setFolders(d.projects, preferred);
+  newField<HTMLInputElement>("name").value = "";
+  newField<HTMLTextAreaElement>("prompt").value = "";
+  newField<HTMLInputElement>("background").checked = d.background;
+  $("#new-session-error").hidden = true;
+  dialog.showModal();
+  (d.projects.length ? newField<HTMLInputElement>("name") : $<HTMLButtonElement>("#choose-folder")).focus();
+}
+
+cwdSelect.addEventListener("change", () => {
+  $("#cwd-path").textContent = cwdSelect.value;
+});
+
+$("#choose-folder").addEventListener("click", async () => {
+  const dir = await pickFolder({ directory: true, defaultPath: cwdSelect.value || undefined });
+  if (typeof dir !== "string") return;
+  const existing = [...cwdSelect.options].map((o) => o.value).filter((v) => v !== dir);
+  setFolders([dir, ...existing], dir);
+});
+
+$("#new-session-button").addEventListener("click", showNewSession);
+$("#cancel-new-session").addEventListener("click", () => dialog.close());
+
+// Cmd/Ctrl+Enter in the prompt starts the session.
+newField<HTMLTextAreaElement>("prompt").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) newForm.requestSubmit();
+});
+
+newForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const error = $("#new-session-error");
+  const submit = newForm.querySelector<HTMLButtonElement>("button[type=submit]")!;
+  if (!cwdSelect.value) {
+    error.textContent = "Choose a project folder first.";
+    error.hidden = false;
+    return;
+  }
+  submit.disabled = true;
+  submit.textContent = "Starting…";
+  try {
+    const message = await invoke<string>("start_session", {
+      session: {
+        cwd: cwdSelect.value,
+        name: newField<HTMLInputElement>("name").value,
+        prompt: newField<HTMLTextAreaElement>("prompt").value,
+        background: newField<HTMLInputElement>("background").checked,
+      },
+    });
+    dialog.close();
+    showFlash(message.split("\n")[0]);
+  } catch (err) {
+    error.textContent = String(err);
+    error.hidden = false;
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Start";
   }
 });
 

@@ -349,3 +349,99 @@ button.icon:hover {
   border-color: var(--accent);
   color: var(--accent-text);
 }
+
+dialog {
+  width: calc(100% - 24px);
+  max-width: 420px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.3);
+}
+
+dialog h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+dialog label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+dialog .row {
+  display: flex;
+  gap: 6px;
+}
+
+dialog .row select {
+  flex: 1;
+  min-width: 0;
+}
+
+dialog select,
+dialog input:not([type="checkbox"]),
+dialog textarea {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: inherit;
+  color: inherit;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+dialog textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+dialog small {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+dialog .banner {
+  margin: 0;
+}
+
+dialog .row button,
+dialog .actions button {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+dialog .actions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+dialog .actions button:disabled {
+  opacity: 0.6;
+}

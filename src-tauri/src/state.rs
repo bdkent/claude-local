@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use claude_local_core::{
     claude, keepalive, terminal, Config, Keepalive, Session, SessionKind, Target, ToolEnv,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::TRAY_ID;
@@ -21,6 +21,15 @@ pub struct SessionView {
     pub project: String,
     pub attachable: bool,
     pub kept_alive: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewSession {
+    pub cwd: String,
+    pub name: String,
+    pub prompt: String,
+    pub background: bool,
 }
 
 /// Everything the list window renders; pushed as the `snapshot` event.
@@ -177,11 +186,7 @@ impl AppState {
             .ok_or_else(|| anyhow!("session {id} is not running in the background"))?;
         let env = self.tool_env(true).map_err(|e| anyhow!(e))?;
         let config = self.config();
-        let target = Target {
-            id,
-            cwd: &view.session.cwd,
-            name: view.session.display_name(),
-        };
+        let target = Target::attach(id, &view.session.cwd, view.session.display_name());
         terminal::build_launch(
             config.terminal,
             &config.custom_terminal,
@@ -191,7 +196,55 @@ impl AppState {
         .spawn(&env)
     }
 
-    pub fn set_config(&self, new: Config) -> Result<()> {
+    /// Start a session in `cwd`: in the background via `claude --bg`, or
+    /// interactively in the user's terminal. Returns a short status message.
+    pub fn start_session(&self, req: &NewSession) -> Result<String> {
+        let env = self.tool_env(true).map_err(|e| anyhow!(e))?;
+        let config = self.config();
+        let name = Some(req.name.as_str());
+        let prompt = Some(req.prompt.as_str());
+        let message = if req.background {
+            let out = claude::start_background(&env, &req.cwd, name, prompt)?;
+            self.wake();
+            if out.is_empty() {
+                "Started in the background".to_string()
+            } else {
+                out
+            }
+        } else {
+            let target = Target::new_session(&req.cwd, name, prompt);
+            terminal::build_launch(
+                config.terminal,
+                &config.custom_terminal,
+                &env.claude,
+                &target,
+            )?
+            .spawn(&env)?;
+            "Opened in your terminal".to_string()
+        };
+
+        let mut config = lock(&self.config);
+        config.remember_project(&req.cwd);
+        // Failing to save the recent list shouldn't fail the start.
+        let _ = config.save();
+        Ok(message)
+    }
+
+    /// Folders to offer in the New Session dialog: recent ones first, then
+    /// any other folder that currently has a session.
+    pub fn project_choices(&self) -> Vec<String> {
+        let mut out = self.config().recent_projects;
+        for v in self.snapshot().sessions {
+            if !out.contains(&v.session.cwd) {
+                out.push(v.session.cwd);
+            }
+        }
+        out
+    }
+
+    pub fn set_config(&self, mut new: Config) -> Result<()> {
+        // The settings form doesn't edit the recent list; keep the live one.
+        new.recent_projects = self.config().recent_projects;
         new.save()?;
         let old = std::mem::replace(&mut *lock(&self.config), new.clone());
         if old.claude_path != new.claude_path {

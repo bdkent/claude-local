@@ -14,6 +14,7 @@
           <button data-kind="background">Bg</button>
           <button data-kind="interactive">Interactive</button>
         </div>
+        <button id="new-session-button" class="icon" title="New session" aria-label="New session">＋</button>
         <button id="refresh" class="icon" title="Refresh" aria-label="Refresh">↻</button>
         <button id="open-settings" class="icon" title="Settings" aria-label="Settings">⚙</button>
       </header>
@@ -38,14 +39,18 @@
         </label>
         <label id="custom-row">
           Custom command
-          <input name="customTerminal" placeholder="my-term -e {claude} attach {id}" spellcheck="false" />
-          <small>Placeholders: {claude} {id} {cwd} {name} {command}</small>
+          <input name="customTerminal" placeholder="my-term --cwd {cwd} -e {args}" spellcheck="false" />
+          <small>Placeholders: {args} (the claude command), {cwd}, {name}, {command} (a full shell line)</small>
         </label>
         <label class="check">
           <input type="checkbox" name="keepalive" />
           Keep background sessions alive
         </label>
         <small class="hint">Holds a hidden <code>claude attach</code> on each background session so it never idles out.</small>
+        <label class="check">
+          <input type="checkbox" name="newSessionBackground" />
+          Start new sessions in the background
+        </label>
         <label class="check">
           <input type="checkbox" name="autostart" />
           Launch at login
@@ -63,6 +68,37 @@
         <small id="config-path" class="hint"></small>
       </form>
     </main>
+
+    <dialog id="new-session">
+      <form id="new-session-form">
+        <h2>New session</h2>
+        <label>
+          Project folder
+          <span class="row">
+            <select name="cwd" required></select>
+            <button type="button" id="choose-folder">Choose…</button>
+          </span>
+          <small id="cwd-path"></small>
+        </label>
+        <label>
+          Name
+          <input name="name" placeholder="e.g. fix-save-bug" spellcheck="false" autocomplete="off" />
+        </label>
+        <label>
+          First prompt
+          <textarea name="prompt" rows="5" placeholder="What should Claude work on?"></textarea>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="background" />
+          Start in background
+        </label>
+        <p id="new-session-error" class="banner error" hidden></p>
+        <div class="actions">
+          <button type="button" id="cancel-new-session">Cancel</button>
+          <button type="submit" class="primary">Start</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

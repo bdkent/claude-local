@@ -9,8 +9,9 @@ use crate::terminal::TerminalApp;
 #[serde(rename_all = "camelCase", default)]
 pub struct Config {
     pub terminal: TerminalApp,
-    /// Used when `terminal` is `custom`. Placeholders: {claude} {id} {cwd}
-    /// {name} {command} (the last is a full `cd … && claude attach …` line).
+    /// Used when `terminal` is `custom`. Placeholders: `{args}` (the full
+    /// `claude …` argv, as its own word), `{cwd}`, `{name}`, and `{command}`
+    /// (a `cd … && claude …` line for a shell).
     pub custom_terminal: String,
     pub keepalive: bool,
     /// Explicit path to `claude`; empty means search PATH.
@@ -19,6 +20,10 @@ pub struct Config {
     pub poll_visible_secs: u64,
     /// Poll interval while hidden (keep-alive checks only need to be occasional).
     pub poll_hidden_secs: u64,
+    /// Default for the "Start in background" box in the New Session dialog.
+    pub new_session_background: bool,
+    /// Folders new sessions were started in, most recent first.
+    pub recent_projects: Vec<String>,
 }
 
 impl Default for Config {
@@ -30,6 +35,8 @@ impl Default for Config {
             claude_path: String::new(),
             poll_visible_secs: 3,
             poll_hidden_secs: 30,
+            new_session_background: true,
+            recent_projects: Vec::new(),
         }
     }
 }
@@ -47,6 +54,13 @@ impl Config {
             .unwrap_or_default()
     }
 
+    pub fn remember_project(&mut self, cwd: &str) {
+        const MAX: usize = 12;
+        self.recent_projects.retain(|p| p != cwd);
+        self.recent_projects.insert(0, cwd.to_owned());
+        self.recent_projects.truncate(MAX);
+    }
+
     pub fn save(&self) -> Result<()> {
         let path = Self::path().context("no config directory on this system")?;
         if let Some(dir) = path.parent() {
@@ -54,5 +68,29 @@ impl Config {
         }
         std::fs::write(&path, serde_json::to_string_pretty(self)?)
             .with_context(|| format!("writing {}", path.display()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn older_config_files_get_new_defaults() {
+        let c: Config = serde_json::from_str(r#"{"terminal":"ghostty"}"#).unwrap();
+        assert_eq!(c.terminal, TerminalApp::Ghostty);
+        assert!(c.new_session_background && c.keepalive);
+    }
+
+    #[test]
+    fn recent_projects_dedupe_and_cap() {
+        let mut c = Config::default();
+        for i in 0..20 {
+            c.remember_project(&format!("/p{i}"));
+        }
+        c.remember_project("/p5");
+        assert_eq!(c.recent_projects.len(), 12);
+        assert_eq!(c.recent_projects[0], "/p5");
+        assert_eq!(c.recent_projects.iter().filter(|p| *p == "/p5").count(), 1);
     }
 }

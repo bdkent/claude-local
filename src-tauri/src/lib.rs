@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager, State, WebviewWindow, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_positioner::{Position, WindowExt};
 
-use state::{AppState, Snapshot};
+use state::{AppState, NewSession, Snapshot};
 
 pub(crate) const TRAY_ID: &str = "main";
 
@@ -29,6 +29,30 @@ fn refresh(state: State<Arc<AppState>>) {
 #[tauri::command]
 fn open_session(state: State<Arc<AppState>>, id: String) -> Result<(), String> {
     state.open_session(&id).map_err(|e| format!("{e:#}"))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NewSessionDefaults {
+    projects: Vec<String>,
+    background: bool,
+}
+
+#[tauri::command]
+fn new_session_defaults(state: State<Arc<AppState>>) -> NewSessionDefaults {
+    NewSessionDefaults {
+        projects: state.project_choices(),
+        background: state.config().new_session_background,
+    }
+}
+
+// Async so `claude --bg` (which can take a second or two) runs off the main thread.
+#[tauri::command]
+async fn start_session(
+    state: State<'_, Arc<AppState>>,
+    session: NewSession,
+) -> Result<String, String> {
+    state.start_session(&session).map_err(|e| format!("{e:#}"))
 }
 
 #[derive(Serialize)]
@@ -186,6 +210,7 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Tray-only on macOS: no Dock icon.
             #[cfg(target_os = "macos")]
@@ -210,6 +235,8 @@ pub fn run() {
             open_session,
             get_settings,
             save_settings,
+            new_session_defaults,
+            start_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running claude-local");
