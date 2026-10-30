@@ -9,6 +9,7 @@
   --accent-text: #ffffff;
   --busy: #3fb760;
   --resting: #8496ad;
+  --waiting: #e39b2d;
   --unknown: #a8a29a;
   --error-bg: #fbe9e6;
   --error-text: #8f2d1a;
@@ -35,6 +36,7 @@
     --warn-text: #f3d48a;
     --danger: #e5554a;
     --resting: #7b8ca3;
+    --waiting: #f0a73a;
     --tip-bg: #efebe5;
     --tip-text: #1f1d1a;
     color-scheme: dark;
@@ -298,12 +300,17 @@ button.icon:hover {
   background: var(--unknown);
 }
 
-.dot.active {
+.dot.working {
   background: var(--busy);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--busy) 25%, transparent);
 }
 
-.dot.resting {
+.dot.waiting {
+  background: var(--waiting);
+}
+
+.dot.done,
+.dot.idle {
   background: var(--resting);
 }
 

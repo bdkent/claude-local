@@ -4,9 +4,14 @@ use serde::{Deserialize, Serialize};
 
 /// One entry from `claude agents --json`.
 ///
-/// Background sessions carry a short `id` (what `claude attach` takes) and a
-/// `state` such as `running`, `done` or `blocked`; interactive sessions have
-/// neither. `pid` and `status` are sometimes absent, even for active sessions.
+/// Two fields describe what a session is doing:
+/// - `status` (`busy` / `idle`, sometimes absent): whether a turn is in
+///   progress right now.
+/// - `state` (background sessions only: `working`, `blocked`, `done`): where
+///   the session's task stands.
+///
+/// Background sessions also carry a short `id` (what `claude attach` takes).
+/// `pid` is sometimes absent, even for active sessions.
 ///
 /// Every field is optional and unknown fields are ignored, so a newer Claude
 /// Code that adds, drops or renames something doesn't break the list.
@@ -40,6 +45,23 @@ impl Default for Session {
     }
 }
 
+/// What a session is doing, combining `status` and `state`. This is what the
+/// UI's status dot shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Activity {
+    /// A turn is in progress.
+    Working,
+    /// The turn ended before the task was done; it's the user's move.
+    Waiting,
+    /// The task is finished.
+    Done,
+    /// An interactive session sitting at its prompt.
+    Idle,
+    Stopped,
+    Unknown,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionKind {
@@ -63,6 +85,23 @@ impl Session {
     /// would resume it, so keep-alive skips those.
     pub fn is_running(&self) -> bool {
         !matches!(self.state.as_deref(), Some("stopped" | "exited"))
+    }
+
+    /// Combine `status` and `state`. A turn in progress (`status: busy`) wins
+    /// over a `state` left over from before it started, e.g. `blocked` just
+    /// after the user replied.
+    pub fn activity(&self) -> Activity {
+        if !self.is_running() {
+            return Activity::Stopped;
+        }
+        match (self.status.as_deref(), self.state.as_deref()) {
+            (Some("busy"), _) => Activity::Working,
+            (_, Some("working" | "running")) => Activity::Working,
+            (_, Some("blocked")) => Activity::Waiting,
+            (_, Some("done")) => Activity::Done,
+            (Some("idle"), None) => Activity::Idle,
+            _ => Activity::Unknown,
+        }
     }
 
     /// Last path component of `cwd`, used to group sessions by project.
@@ -158,6 +197,30 @@ mod tests {
         assert_eq!(sessions[0].attach_id(), Some("c42d8a15"));
         assert!(!sessions[1].is_running());
         assert!(parse_agents_json("{}").is_err());
+    }
+
+    /// Every status/state combination seen in real `claude agents --json`
+    /// output, plus interactive and unexpected ones.
+    #[test]
+    fn activity_combines_status_and_state() {
+        let check = |status: Option<&str>, state: Option<&str>, want: Activity| {
+            let s = Session {
+                status: status.map(Into::into),
+                state: state.map(Into::into),
+                ..Session::default()
+            };
+            assert_eq!(s.activity(), want, "status {status:?}, state {state:?}");
+        };
+        check(Some("idle"), Some("done"), Activity::Done);
+        check(None, Some("blocked"), Activity::Waiting);
+        check(Some("idle"), Some("blocked"), Activity::Waiting);
+        check(Some("busy"), Some("blocked"), Activity::Working);
+        check(Some("busy"), Some("working"), Activity::Working);
+        check(None, Some("working"), Activity::Working);
+        check(Some("busy"), None, Activity::Working);
+        check(Some("idle"), None, Activity::Idle);
+        check(Some("idle"), Some("paused"), Activity::Unknown);
+        check(Some("idle"), Some("stopped"), Activity::Stopped);
     }
 
     #[test]

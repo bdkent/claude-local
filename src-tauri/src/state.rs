@@ -7,8 +7,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
 use claude_local_core::{
-    claude, doctor, env, keepalive, terminal, Check, Config, Keepalive, Session, SessionKind,
-    Target, TerminalApp, ToolEnv,
+    claude, doctor, env, keepalive, terminal, Activity, Check, Config, Keepalive, Session,
+    SessionKind, Target, TerminalApp, ToolEnv,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -24,6 +24,8 @@ pub struct SessionView {
     pub attachable: bool,
     /// Has a live process; a stopped background session doesn't.
     pub running: bool,
+    /// What the status dot shows; combines `status` and `state`.
+    pub activity: Activity,
     pub kept_alive: bool,
 }
 
@@ -229,6 +231,7 @@ impl AppState {
                             project: s.project(),
                             attachable: s.attach_id().is_some(),
                             running: s.is_running(),
+                            activity: s.activity(),
                             kept_alive: s.attach_id().is_some_and(|id| alive.contains(id)),
                             session: s,
                         })
@@ -381,11 +384,23 @@ fn update_tray(app: &AppHandle, snap: &Snapshot) {
     let tooltip = match &snap.error {
         _ if snap.checks.iter().any(|c| !c.ok) => "Claude Local: setup needed".to_string(),
         Some(_) => "Claude Local: can't list sessions".to_string(),
-        None => format!(
-            "Claude Local: {} background, {} interactive",
-            count(SessionKind::Background),
-            count(SessionKind::Interactive)
-        ),
+        None => {
+            let waiting = snap
+                .sessions
+                .iter()
+                .filter(|s| s.activity == Activity::Waiting)
+                .count();
+            let waiting = if waiting > 0 {
+                format!(" · {waiting} waiting for you")
+            } else {
+                String::new()
+            };
+            format!(
+                "Claude Local: {} background, {} interactive{waiting}",
+                count(SessionKind::Background),
+                count(SessionKind::Interactive)
+            )
+        }
     };
     let _ = tray.set_tooltip(Some(tooltip));
 }

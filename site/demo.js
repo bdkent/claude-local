@@ -12,7 +12,7 @@
   const minutesAgo = (m) => Date.now() - m * 60_000;
   const sessions = [
     { id: "3b9e1c07", name: "starship-export", project: "starship", kind: "background", status: "idle", state: "done", started: minutesAgo(190), kept: true },
-    { id: "a11b2c3d", name: "starship-shaders", project: "starship", kind: "background", status: "busy", state: "running", started: minutesAgo(41), kept: true },
+    { id: "a11b2c3d", name: "starship-shaders", project: "starship", kind: "background", status: "busy", state: "working", started: minutesAgo(41), kept: true },
     { id: null, name: "meadow-refactor", project: "meadow", kind: "interactive", status: "busy", started: minutesAgo(1560), kept: false },
     { id: "c42d8a15", name: "harbor-build", project: "harbor", kind: "background", status: "idle", state: "done", started: minutesAgo(300), kept: true },
   ];
@@ -121,7 +121,7 @@
   let added = 0;
   function addSession() {
     const [project, name] = newNames[added++ % newNames.length];
-    const s = { id: Math.random().toString(16).slice(2, 10), name: added > newNames.length ? `${name}-${added}` : name, project, kind: "background", status: "busy", state: "running", started: Date.now(), kept: false };
+    const s = { id: Math.random().toString(16).slice(2, 10), name: added > newNames.length ? `${name}-${added}` : name, project, kind: "background", status: "busy", state: "working", started: Date.now(), kept: false };
     s.fresh = true;
     sessions.push(s);
     if (kind === "interactive") {
@@ -193,7 +193,7 @@
     const bg = sessions.filter((s) => s.kind === "background");
     const s = bg[Math.floor(Math.random() * bg.length)];
     s.status = s.status === "busy" ? "idle" : "busy";
-    s.state = s.status === "busy" ? "running" : "done";
+    s.state = s.status === "busy" ? "working" : "done";
     const li = [...list.children].find((n) => n._session === s);
     if (li && !li.matches(":hover")) li.replaceWith(row(s));
   }, 2600);
