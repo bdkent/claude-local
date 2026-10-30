@@ -322,8 +322,9 @@ button.icon:hover {
 }
 
 .keepalive {
-  color: var(--accent);
-  font-size: 11px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
 }
 
 .session .open {

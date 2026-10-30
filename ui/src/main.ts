@@ -125,6 +125,9 @@ async function openSession(s: SessionView) {
   }
 }
 
+const LINK_ICON =
+  '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 9.5a3 3 0 0 0 4.2 0l2.1-2.1a3 3 0 0 0-4.2-4.2l-.9.9M9.5 6.5a3 3 0 0 0-4.2 0L3.2 8.6a3 3 0 0 0 4.2 4.2l.9-.9"/></svg>';
+
 const TRASH_ICON =
   '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5h6.6L12 4M6.75 6.5v4.5M9.25 6.5v4.5"/></svg>';
 
@@ -151,7 +154,13 @@ function sessionRow(s: SessionView): HTMLLIElement {
     ),
   );
   if (s.keptAlive) {
-    row.append(el("span", { className: "keepalive", title: "Kept alive" }, "♥"));
+    const link = el("span", {
+      className: "keepalive",
+      title: "Kept alive: a hidden client is attached so this session won't idle out",
+      ariaLabel: "Kept alive",
+    });
+    link.innerHTML = LINK_ICON;
+    row.append(link);
   }
   if (s.attachable) {
     const open = el("button", { className: "open", textContent: "Open", title: "Open in terminal" });

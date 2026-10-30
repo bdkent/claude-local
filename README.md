@@ -13,7 +13,7 @@ Control.
   status: green is busy, amber is idle.
 - **Keep-alive.** Claude Code idles a background session after 8 hours with no
   client attached. Claude Local holds a hidden `claude attach <id>` on every
-  background session (marked ♥) so that never happens.
+  background session (marked with a link icon) so that never happens.
 - **Open in terminal.** Double-click a background session, or hit **Open**, to
   run `claude attach <id>` in Terminal, iTerm2, Ghostty, WezTerm, kitty,
   Alacritty, Windows Terminal, PowerShell, or a custom command. The hidden
