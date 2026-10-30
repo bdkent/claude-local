@@ -5,17 +5,18 @@ import { open as pickFolder } from "@tauri-apps/plugin-dialog";
 type Kind = "interactive" | "background" | "other";
 
 interface SessionView {
-  pid: number;
+  pid?: number;
   id?: string;
   cwd: string;
   kind: Kind;
-  startedAt: number;
+  startedAt?: number;
   sessionId: string;
   name?: string;
   status?: string;
   state?: string;
   project: string;
   attachable: boolean;
+  running: boolean;
   keptAlive: boolean;
 }
 
@@ -118,13 +119,17 @@ function terminalLabel(): string {
   return snapshot?.terminalLabel ?? "your terminal";
 }
 
+function displayName(s: SessionView): string {
+  return s.name || s.id || s.sessionId.slice(0, 8) || "unnamed session";
+}
+
 function visibleSessions(all: SessionView[]): SessionView[] {
   const q = search.trim().toLowerCase();
   return all.filter(
     (s) =>
       (kindFilter === "all" || s.kind === kindFilter) &&
       (!projectFilter || s.project === projectFilter) &&
-      (!q || (s.name ?? s.sessionId).toLowerCase().includes(q) || s.project.toLowerCase().includes(q)),
+      (!q || displayName(s).toLowerCase().includes(q) || s.project.toLowerCase().includes(q)),
   );
 }
 
@@ -140,6 +145,8 @@ async function openSession(s: SessionView) {
 const STATUS_TIPS: Record<string, string> = {
   busy: "Busy: Claude is working",
   idle: "Idle: waiting for your input",
+  blocked: "Blocked: waiting for you (for example a permission prompt). Open it to respond.",
+  stopped: "Stopped: no process is running. Opening it resumes the session.",
   unknown: "Status unknown",
 };
 
@@ -150,28 +157,41 @@ const TRASH_ICON =
   '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5h6.6L12 4M6.75 6.5v4.5M9.25 6.5v4.5"/></svg>';
 
 function sessionRow(s: SessionView): HTMLLIElement {
-  const status = s.status ?? "unknown";
-  const dotClass = status === "busy" ? "busy" : status === "idle" ? "idle" : "unknown";
-  const meta = [s.kind === "background" ? "bg" : s.kind, s.state ?? status, ago(s.startedAt)].join(" · ");
+  // `blocked` (waiting for you) matters most, and often arrives without a status.
+  const status = !s.running ? "stopped" : s.state === "blocked" ? "blocked" : (s.status ?? "unknown");
+  const dotClass = ["busy", "idle", "blocked", "stopped"].includes(status) ? status : "unknown";
+  const meta = [
+    s.kind === "background" ? "bg" : s.kind,
+    s.running ? (s.state ?? status) : "stopped",
+    s.startedAt ? ago(s.startedAt) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const kind = s.kind === "background" ? "Background session" : s.kind === "interactive" ? "Interactive session" : "Session";
-  const started = new Date(s.startedAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const started = s.startedAt
+    ? ` · started ${new Date(s.startedAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`
+    : "";
   const row = withTip(
     el("li", { className: `session ${s.attachable ? "attachable" : "inert"}`, tabIndex: 0 }),
     [
       s.cwd,
-      `${kind}${s.state ? ` · ${s.state}` : ""} · started ${started}`,
-      s.attachable
-        ? `Double-click to open in ${terminalLabel()}`
-        : "Interactive sessions live in the terminal that started them",
-    ].join("\n"),
+      `${kind}${s.state ? ` · ${s.state}` : ""}${started}`,
+      !s.attachable
+        ? "Interactive sessions live in the terminal that started them"
+        : s.running
+          ? `Double-click to open in ${terminalLabel()}`
+          : `Not running. Double-click to resume it in ${terminalLabel()}`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
   );
   row.append(
     withTip(el("span", { className: `dot ${dotClass}` }), STATUS_TIPS[dotClass]),
     el(
       "span",
       { className: "label" },
-      el("span", { className: "name" }, s.name ?? s.sessionId.slice(0, 8)),
+      el("span", { className: "name" }, displayName(s)),
       el("span", { className: "meta" }, meta),
     ),
   );
@@ -256,7 +276,8 @@ function render() {
   else if (snapshot.keepaliveErrors.length) showBanner(snapshot.keepaliveErrors.join("\n"), "warn");
   else hideBanner();
 
-  const bg = sessions.filter((s) => s.kind === "background");
+  // Stopped sessions aren't kept alive (that would resume them), so don't count them.
+  const bg = sessions.filter((s) => s.kind === "background" && s.running);
   const kept = bg.filter((s) => s.keptAlive).length;
   const time = new Date(snapshot.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   $("#status").textContent =
@@ -553,7 +574,7 @@ let deleting: { session: SessionView; discard: boolean } | null = null;
 function confirmDelete(s: SessionView) {
   if (!s.attachable || !s.id) return;
   deleting = { session: s, discard: false };
-  const name = s.name ?? s.sessionId.slice(0, 8);
+  const name = displayName(s);
   $("#delete-title").textContent = `Delete “${name}”?`;
   $("#delete-body").textContent =
     "This stops the session and deletes it, along with its worktree if it has one. Its conversation can't be resumed afterwards.";
@@ -582,7 +603,7 @@ deleteForm.addEventListener("submit", async (e) => {
     const result = await invoke<DeleteResult>("delete_session", { id: session.id, discard });
     if (result.status === "deleted") {
       deleteDialog.close();
-      showFlash(`Deleted ${session.name ?? session.id}`);
+      showFlash(`Deleted ${displayName(session)}`);
       return;
     }
     // Claude refused because work would be lost: show why, ask once more.

@@ -5,24 +5,39 @@ use serde::{Deserialize, Serialize};
 /// One entry from `claude agents --json`.
 ///
 /// Background sessions carry a short `id` (what `claude attach` takes) and a
-/// `state`; interactive sessions have neither. Unknown fields are ignored so a
-/// newer Claude Code doesn't break parsing.
+/// `state` such as `running`, `done` or `blocked`; interactive sessions have
+/// neither. `pid` and `status` are sometimes absent, even for active sessions.
+///
+/// Every field is optional and unknown fields are ignored, so a newer Claude
+/// Code that adds, drops or renames something doesn't break the list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct Session {
-    pub pid: u32,
-    #[serde(default)]
+    pub pid: Option<u32>,
     pub id: Option<String>,
     pub cwd: String,
     pub kind: SessionKind,
-    pub started_at: u64,
+    pub started_at: Option<u64>,
     pub session_id: String,
-    #[serde(default)]
     pub name: Option<String>,
-    #[serde(default)]
     pub status: Option<String>,
-    #[serde(default)]
     pub state: Option<String>,
+}
+
+impl Default for Session {
+    fn default() -> Self {
+        Self {
+            pid: None,
+            id: None,
+            cwd: String::new(),
+            kind: SessionKind::Other,
+            started_at: None,
+            session_id: String::new(),
+            name: None,
+            status: None,
+            state: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -43,6 +58,13 @@ impl Session {
         }
     }
 
+    /// Whether the session is active. `claude agents --json` lists only
+    /// active sessions, but if one is ever reported as stopped, attaching to it
+    /// would resume it, so keep-alive skips those.
+    pub fn is_running(&self) -> bool {
+        !matches!(self.state.as_deref(), Some("stopped" | "exited"))
+    }
+
     /// Last path component of `cwd`, used to group sessions by project.
     pub fn project(&self) -> String {
         Path::new(&self.cwd)
@@ -52,12 +74,26 @@ impl Session {
     }
 
     pub fn display_name(&self) -> &str {
-        self.name.as_deref().unwrap_or(&self.session_id)
+        [
+            self.name.as_deref(),
+            self.id.as_deref(),
+            Some(self.session_id.as_str()),
+        ]
+        .into_iter()
+        .flatten()
+        .find(|s| !s.is_empty())
+        .unwrap_or("unnamed session")
     }
 }
 
+/// Parse `claude agents --json`. Entries are parsed one at a time and any that
+/// don't fit are skipped, so one unexpected entry can't hide every session.
 pub fn parse_agents_json(json: &str) -> serde_json::Result<Vec<Session>> {
-    serde_json::from_str(json)
+    let entries: Vec<serde_json::Value> = serde_json::from_str(json)?;
+    Ok(entries
+        .into_iter()
+        .filter_map(|e| serde_json::from_value(e).ok())
+        .collect())
 }
 
 #[cfg(test)]
@@ -103,6 +139,37 @@ mod tests {
         assert_eq!(bg.attach_id(), Some("c42d8a15"));
         assert_eq!(bg.state.as_deref(), Some("done"));
         assert_eq!(bg.project(), "harbor");
+    }
+
+    #[test]
+    fn entries_without_pid_or_other_fields_still_parse() {
+        // A blocked background session (waiting for the user) has no pid or
+        // status but is still active; a stopped one is not.
+        let json = r#"[
+          {"id":"c42d8a15","cwd":"/p/harbor","kind":"background","startedAt":1,"sessionId":"c42d8a15-6e7f","name":"harbor-build","state":"blocked"},
+          {"id":"5d0c2f7e","cwd":"/p/meadow","kind":"background","sessionId":"5d0c2f7e-1a3b","state":"stopped"},
+          "not an object",
+          {"pid":"not a number","kind":"background"}
+        ]"#;
+        let sessions = parse_agents_json(json).unwrap();
+        assert_eq!(sessions.len(), 2);
+        assert!(sessions[0].pid.is_none() && sessions[0].status.is_none());
+        assert!(sessions[0].is_running());
+        assert_eq!(sessions[0].attach_id(), Some("c42d8a15"));
+        assert!(!sessions[1].is_running());
+        assert!(parse_agents_json("{}").is_err());
+    }
+
+    #[test]
+    fn display_name_falls_back_sensibly() {
+        let mut s = Session {
+            id: Some("abc".into()),
+            ..Session::default()
+        };
+        assert_eq!(s.display_name(), "abc");
+        s.name = Some("named".into());
+        assert_eq!(s.display_name(), "named");
+        assert_eq!(Session::default().display_name(), "unnamed session");
     }
 
     #[test]

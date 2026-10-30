@@ -55,6 +55,8 @@ impl Keepalive {
         let mut report = Report::default();
         let wanted: HashMap<&str, &Session> = sessions
             .iter()
+            // Never attach to a stopped session: that would resume it.
+            .filter(|s| s.is_running())
             .filter_map(|s| s.attach_id().map(|id| (id, s)))
             .collect();
 
@@ -469,6 +471,19 @@ mod tests {
         // The delete failed and the session is still listed: re-attach at once.
         let report = ka.reconcile(&env(), &sessions(&["a"]));
         assert_eq!(report.started, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn blocked_sessions_are_kept_alive_but_stopped_ones_are_not_resumed() {
+        let mut ka = Keepalive::new(Box::new(Fake::default()));
+        let sessions = parse_agents_json(
+            r#"[{"id":"bb","cwd":"/p","kind":"background","sessionId":"bb-full","state":"blocked"},
+                {"id":"ss","cwd":"/p","kind":"background","sessionId":"ss-full","state":"stopped"}]"#,
+        )
+        .unwrap();
+        let report = ka.reconcile(&env(), &sessions);
+        assert_eq!(report.started, vec!["bb".to_string()]);
+        assert!(!report.alive.contains("ss"));
     }
 
     #[test]

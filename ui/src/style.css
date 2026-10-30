@@ -306,6 +306,28 @@ button.icon:hover {
   background: var(--idle);
 }
 
+.dot.blocked {
+  background: var(--danger);
+  animation: needs-you 1.6s ease-in-out infinite;
+}
+
+@keyframes needs-you {
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 30%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot.blocked {
+    animation: none;
+  }
+}
+
+.dot.stopped {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--unknown);
+}
+
 .label {
   display: flex;
   flex-direction: column;
