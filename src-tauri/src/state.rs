@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, Context, Result};
 use claude_local_core::{
     claude, doctor, env, keepalive, terminal, Check, Config, Keepalive, Session, SessionKind,
-    Target, ToolEnv,
+    Target, TerminalApp, ToolEnv,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -119,6 +119,11 @@ impl AppState {
             *path = Some(env::search_path());
         }
         path.clone().expect("set above")
+    }
+
+    /// Terminal presets installed on this machine, plus Custom.
+    pub fn installed_terminals(&self) -> Vec<TerminalApp> {
+        terminal::installed(&self.search_path(false))
     }
 
     /// Find `claude`. Once found it's cached; until then every call looks

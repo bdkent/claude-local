@@ -3,7 +3,7 @@ mod state;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use claude_local_core::{Config, TerminalApp};
+use claude_local_core::{terminal, Config, TerminalApp};
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -59,7 +59,7 @@ async fn start_session(
 #[serde(rename_all = "camelCase")]
 struct TerminalOption {
     value: TerminalApp,
-    label: &'static str,
+    label: String,
 }
 
 #[derive(Serialize)]
@@ -73,23 +73,41 @@ struct SettingsView {
     config_path: Option<String>,
 }
 
+// Async so looking up installed terminals stays off the main thread.
 #[tauri::command]
-fn get_settings(app: AppHandle, state: State<Arc<AppState>>) -> SettingsView {
+async fn get_settings(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<SettingsView, String> {
     let (claude_resolved, env_error) = state.env_status();
-    SettingsView {
-        config: state.config(),
-        terminals: TerminalApp::available()
-            .iter()
-            .map(|&value| TerminalOption {
-                value,
-                label: value.label(),
-            })
-            .collect(),
+    let config = state.config();
+    let mut terminals: Vec<TerminalOption> = state
+        .installed_terminals()
+        .into_iter()
+        .map(|value| TerminalOption {
+            value,
+            label: value.label().into(),
+        })
+        .collect();
+    // Keep a selected-but-uninstalled terminal visible rather than silently
+    // switching it; the setup card explains the problem.
+    if !terminals.iter().any(|t| t.value == config.terminal) {
+        terminals.insert(
+            0,
+            TerminalOption {
+                value: config.terminal,
+                label: format!("{} (not installed)", config.terminal.label()),
+            },
+        );
+    }
+    Ok(SettingsView {
+        config,
+        terminals,
         claude_resolved,
         env_error,
         autostart: app.autolaunch().is_enabled().unwrap_or(false),
         config_path: Config::path().map(|p| p.display().to_string()),
-    }
+    })
 }
 
 #[derive(Deserialize)]
@@ -216,7 +234,16 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let state = Arc::new(AppState::new(Config::load()));
+            let mut config = Config::load();
+            if !Config::exists() {
+                // First run: default to a terminal that's actually installed
+                // (e.g. PowerShell on Windows without Windows Terminal).
+                let path = std::env::var_os("PATH").unwrap_or_default();
+                if let Some(&first) = terminal::installed(&path).first() {
+                    config.terminal = first;
+                }
+            }
+            let state = Arc::new(AppState::new(config));
             app.manage(state.clone());
             build_tray(app.handle())?;
             state::spawn_poller(app.handle().clone(), state);

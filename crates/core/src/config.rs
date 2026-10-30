@@ -46,6 +46,11 @@ impl Config {
         dirs::config_dir().map(|d| d.join("claude-local").join("config.json"))
     }
 
+    /// Whether a config file has been saved yet (false on first run).
+    pub fn exists() -> bool {
+        Self::path().is_some_and(|p| p.is_file())
+    }
+
     /// Load the config, falling back to defaults if it is missing or unreadable.
     pub fn load() -> Self {
         Self::path()

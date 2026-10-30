@@ -177,23 +177,23 @@ pub fn build_launch(app: TerminalApp, custom: &str, claude: &Path, t: &Target) -
             "end tell",
         ]),
         Ghostty => open_app(
-            mac_app_name(app),
+            app,
             [format!("--working-directory={cwd}"), "-e".into()]
                 .into_iter()
                 .chain(argv),
         ),
         Wezterm => open_app(
-            mac_app_name(app),
+            app,
             ["start".into(), "--cwd".into(), cwd.into(), "--".into()]
                 .into_iter()
                 .chain(argv),
         ),
         Kitty => open_app(
-            mac_app_name(app),
+            app,
             ["--directory".into(), cwd.into()].into_iter().chain(argv),
         ),
         Alacritty => open_app(
-            mac_app_name(app),
+            app,
             ["--working-directory".into(), cwd.into(), "-e".into()]
                 .into_iter()
                 .chain(argv),
@@ -260,82 +260,120 @@ pub fn build_launch(app: TerminalApp, custom: &str, claude: &Path, t: &Target) -
 
 /// Check that the chosen terminal is installed. `path` is the PATH used to
 /// launch it. The error says what is missing.
+/// Presets from `TerminalApp::available` that are installed, plus `Custom`.
+pub fn installed(path: &std::ffi::OsString) -> Vec<TerminalApp> {
+    TerminalApp::available()
+        .iter()
+        .copied()
+        .filter(|&app| is_installed(app, path))
+        .collect()
+}
+
+/// Whether a preset's app is installed. Always true for `Custom`; use
+/// `check_installed` to validate the custom command itself.
+pub fn is_installed(app: TerminalApp, path: &std::ffi::OsString) -> bool {
+    use TerminalApp::*;
+    let found = |name: &str| crate::env::which(&[name], path).is_some();
+    match app {
+        // Built into their platforms.
+        Terminal | Powershell | Custom => true,
+        Iterm | Ghostty | Wezterm | Kitty | Alacritty => find_mac_app(app).is_some(),
+        WindowsTerminal => found("wt.exe"),
+        XTerminalEmulator => found("x-terminal-emulator"),
+    }
+}
+
+/// Check that the chosen terminal is installed. `path` is the PATH used to
+/// launch it. The error says what is missing.
 pub fn check_installed(
     app: TerminalApp,
     custom: &str,
     path: &std::ffi::OsString,
 ) -> Result<(), String> {
-    use TerminalApp::*;
-    let found = |names: &[&str]| crate::env::which(names, path).is_some();
-    match app {
-        // Always present on their platforms.
-        Terminal | Powershell => Ok(()),
-        Iterm | Ghostty | Wezterm | Kitty | Alacritty => {
-            let name = mac_app_name(app);
-            // `open -Ra` asks Launch Services whether the app exists, wherever it's installed.
-            let installed = Command::new("open")
-                .args(["-Ra", name])
-                .output()
-                .is_ok_and(|o| o.status.success());
-            if installed {
-                Ok(())
-            } else {
-                Err(format!("{} isn't installed", app.label()))
-            }
-        }
-        WindowsTerminal => {
-            if found(&["wt.exe"]) {
-                Ok(())
-            } else {
-                Err("Windows Terminal isn't installed".into())
-            }
-        }
-        XTerminalEmulator => {
-            if found(&["x-terminal-emulator"]) {
-                Ok(())
-            } else {
-                Err("x-terminal-emulator isn't installed".into())
-            }
-        }
-        Custom => {
-            let program = split_args(custom).into_iter().next().unwrap_or_default();
-            if program.is_empty() {
-                return Err("the custom terminal command is empty".into());
-            }
-            let as_path = Path::new(&program);
-            if as_path.is_absolute() && as_path.is_file() || found(&[program.as_str()]) {
-                Ok(())
-            } else {
-                Err(format!(
-                    "`{program}` (your custom terminal command) wasn't found"
-                ))
-            }
-        }
+    if app != TerminalApp::Custom {
+        return if is_installed(app, path) {
+            Ok(())
+        } else {
+            Err(format!("{} isn't installed", app.label()))
+        };
+    }
+    let program = split_args(custom).into_iter().next().unwrap_or_default();
+    if program.is_empty() {
+        return Err("the custom terminal command is empty".into());
+    }
+    let as_path = Path::new(&program);
+    if as_path.is_absolute() && as_path.is_file()
+        || crate::env::which(&[program.as_str()], path).is_some()
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "`{program}` (your custom terminal command) wasn't found"
+        ))
     }
 }
 
-/// Name `open -a` knows a macOS terminal by.
-fn mac_app_name(app: TerminalApp) -> &'static str {
+/// A macOS terminal's bundle identifier and `.app` folder name.
+fn mac_bundle(app: TerminalApp) -> Option<(&'static str, &'static str)> {
     use TerminalApp::*;
-    match app {
-        Iterm => "iTerm",
-        Ghostty => "Ghostty",
-        Wezterm => "WezTerm",
-        Kitty => "kitty",
-        Alacritty => "Alacritty",
-        _ => "Terminal",
+    Some(match app {
+        Terminal => ("com.apple.Terminal", "Terminal.app"),
+        Iterm => ("com.googlecode.iterm2", "iTerm.app"),
+        Ghostty => ("com.mitchellh.ghostty", "Ghostty.app"),
+        Wezterm => ("com.github.wez.wezterm", "WezTerm.app"),
+        Kitty => ("net.kovidgoyal.kitty", "kitty.app"),
+        Alacritty => ("org.alacritty", "Alacritty.app"),
+        _ => return None,
+    })
+}
+
+/// Locate a macOS terminal app without launching or revealing it: the usual
+/// Applications folders first, then a Spotlight lookup by bundle identifier
+/// for apps installed anywhere else.
+pub fn find_mac_app(app: TerminalApp) -> Option<std::path::PathBuf> {
+    let (bundle_id, bundle) = mac_bundle(app)?;
+    let mut folders = vec![
+        std::path::PathBuf::from("/Applications"),
+        "/Applications/Utilities".into(),
+        "/System/Applications/Utilities".into(),
+    ];
+    if let Some(home) = dirs::home_dir() {
+        folders.push(home.join("Applications"));
     }
+    if let Some(found) = folders.iter().map(|d| d.join(bundle)).find(|p| p.is_dir()) {
+        return Some(found);
+    }
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let output = Command::new("mdfind")
+        .arg(format!("kMDItemCFBundleIdentifier == '{bundle_id}'"))
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(std::path::PathBuf::from)
+        .find(|p| p.extension().is_some_and(|e| e == "app") && p.is_dir())
 }
 
 fn osascript(lines: &[&str]) -> Launch {
     Launch::new("osascript", lines.iter().flat_map(|l| ["-e", l]))
 }
 
-/// `open -na <App> --args …` starts the app even when it isn't on PATH.
-fn open_app(app: &str, args: impl IntoIterator<Item = String>) -> Launch {
+/// `open -na <App> --args …` starts a new instance of a macOS app. Uses the
+/// app's location when we can find it, so renamed or moved apps still work.
+fn open_app(app: TerminalApp, args: impl IntoIterator<Item = String>) -> Launch {
+    let target = find_mac_app(app)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| {
+            mac_bundle(app)
+                .map_or("Terminal", |(_, b)| b)
+                .trim_end_matches(".app")
+                .to_owned()
+        });
     Launch::new(
         "open",
-        ["-na".to_string(), app.into(), "--args".into()]
+        ["-na".to_string(), target, "--args".into()]
             .into_iter()
             .chain(args),
     )
@@ -535,6 +573,17 @@ mod tests {
             ps.args[2],
             "& '/bin/claude' '--name' 'fix shaders' 'it''s red;\nfix it'"
         );
+    }
+
+    #[test]
+    fn only_installed_presets_are_offered() {
+        let empty = std::ffi::OsString::new();
+        let list = installed(&empty);
+        // Custom is always offered; nothing that needs PATH is found on an empty one.
+        assert!(list.contains(&TerminalApp::Custom));
+        assert!(!list.contains(&TerminalApp::XTerminalEmulator));
+        assert!(!list.contains(&TerminalApp::WindowsTerminal));
+        assert!(check_installed(TerminalApp::Custom, "nope-term {args}", &empty).is_err());
     }
 
     #[test]
