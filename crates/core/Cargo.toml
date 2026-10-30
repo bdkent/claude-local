@@ -1,0 +1,15 @@
+[package]
+name = "claude-local-core"
+description = "Session discovery, keep-alive and terminal launching for claude-local"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+dirs = "6"
+
+[target.'cfg(windows)'.dependencies]
+portable-pty = "0.9"

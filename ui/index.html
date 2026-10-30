@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Sessions</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main id="list-view">
+      <header class="toolbar">
+        <div class="segmented" role="tablist" aria-label="Session kind">
+          <button data-kind="all" class="active">All</button>
+          <button data-kind="background">Bg</button>
+          <button data-kind="interactive">Interactive</button>
+        </div>
+        <button id="refresh" class="icon" title="Refresh" aria-label="Refresh">↻</button>
+        <button id="open-settings" class="icon" title="Settings" aria-label="Settings">⚙</button>
+      </header>
+      <div class="filters">
+        <select id="project" aria-label="Project"></select>
+        <input id="search" type="search" placeholder="Filter by name" aria-label="Filter by name" />
+      </div>
+      <div id="banner" class="banner" hidden></div>
+      <ul id="groups" class="groups"></ul>
+      <p id="empty" class="empty" hidden></p>
+      <footer id="status" class="status"></footer>
+    </main>
+
+    <main id="settings-view" hidden>
+      <header class="toolbar">
+        <h1>Settings</h1>
+      </header>
+      <form id="settings" class="settings">
+        <label>
+          Open sessions in
+          <select name="terminal"></select>
+        </label>
+        <label id="custom-row">
+          Custom command
+          <input name="customTerminal" placeholder="my-term -e {claude} attach {id}" spellcheck="false" />
+          <small>Placeholders: {claude} {id} {cwd} {name} {command}</small>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="keepalive" />
+          Keep background sessions alive
+        </label>
+        <small class="hint">Holds a hidden <code>claude attach</code> on each background session so it never idles out.</small>
+        <label class="check">
+          <input type="checkbox" name="autostart" />
+          Launch at login
+        </label>
+        <label>
+          <span>Path to <code>claude</code></span>
+          <input name="claudePath" placeholder="Search PATH" spellcheck="false" />
+          <small id="claude-resolved"></small>
+        </label>
+        <p id="settings-error" class="banner error" hidden></p>
+        <div class="actions">
+          <button type="button" id="cancel-settings">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </div>
+        <small id="config-path" class="hint"></small>
+      </form>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
