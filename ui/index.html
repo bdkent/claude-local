@@ -101,6 +101,20 @@
       </form>
     </dialog>
 
+    <dialog id="confirm-delete">
+      <form id="delete-form">
+        <h2 id="delete-title"></h2>
+        <p id="delete-body"></p>
+        <small id="delete-where"></small>
+        <pre id="delete-claude" hidden></pre>
+        <p id="delete-error" class="banner error" hidden></p>
+        <div class="actions">
+          <button type="button" id="cancel-delete">Cancel</button>
+          <button type="submit" class="danger" id="confirm-delete-button">Delete</button>
+        </div>
+      </form>
+    </dialog>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

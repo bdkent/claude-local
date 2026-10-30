@@ -105,6 +105,16 @@ impl Keepalive {
         report
     }
 
+    /// Stop the keep-alive for one session, e.g. before deleting it. If the
+    /// session is still around afterwards, the next `reconcile` restarts it.
+    pub fn release(&mut self, id: &str) -> Result<()> {
+        self.last_start.remove(id);
+        if self.backend.running()?.contains(id) {
+            self.backend.stop(id)?;
+        }
+        Ok(())
+    }
+
     /// Stop every keep-alive client (used when the feature is switched off).
     pub fn stop_all(&mut self) -> Report {
         let mut report = Report::default();
@@ -442,6 +452,23 @@ mod tests {
             *running.lock().unwrap(),
             HashSet::from(["a".to_string(), "b".to_string()])
         );
+    }
+
+    #[test]
+    fn released_sessions_come_back_if_still_listed() {
+        let running = Arc::new(Mutex::new(HashSet::new()));
+        let mut ka = Keepalive::new(Box::new(Fake {
+            running: running.clone(),
+            fail_start: false,
+        }));
+        ka.reconcile(&env(), &sessions(&["a"]));
+
+        ka.release("a").unwrap();
+        assert!(running.lock().unwrap().is_empty());
+
+        // The delete failed and the session is still listed: re-attach at once.
+        let report = ka.reconcile(&env(), &sessions(&["a"]));
+        assert_eq!(report.started, vec!["a".to_string()]);
     }
 
     #[test]

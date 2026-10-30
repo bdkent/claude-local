@@ -14,6 +14,7 @@
   --error-text: #8f2d1a;
   --warn-bg: #fdf4dc;
   --warn-text: #7a5a10;
+  --danger: #c4372b;
   color-scheme: light;
 }
 
@@ -30,6 +31,7 @@
     --error-text: #ffb8a6;
     --warn-bg: #3f3418;
     --warn-text: #f3d48a;
+    --danger: #e5554a;
     color-scheme: dark;
   }
 }
@@ -333,8 +335,28 @@ button.icon:hover {
   color: var(--accent-text);
 }
 
+.session .delete {
+  visibility: hidden;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.session .delete:hover {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+}
+
 .session:hover .open,
-.session:focus-visible .open {
+.session:focus-visible .open,
+.session:hover .delete,
+.session:focus-visible .delete {
   visibility: visible;
 }
 
@@ -514,4 +536,33 @@ dialog .actions button.primary {
 
 dialog .actions button:disabled {
   opacity: 0.6;
+}
+
+dialog p {
+  margin: 0;
+}
+
+dialog pre {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 140px;
+  overflow-y: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+dialog pre[hidden] {
+  display: none;
+}
+
+dialog .actions button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
 }

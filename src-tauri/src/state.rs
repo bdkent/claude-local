@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -34,6 +34,19 @@ pub struct NewSession {
     pub background: bool,
 }
 
+/// Outcome of deleting a session, for the confirmation dialog.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase", tag = "status")]
+pub enum DeleteResult {
+    Deleted {
+        message: String,
+    },
+    /// Claude refused because work would be lost; ask again before discarding.
+    NeedsDiscard {
+        message: String,
+    },
+}
+
 /// Everything the list window renders; pushed as the `snapshot` event.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,6 +68,9 @@ pub struct AppState {
     path: Mutex<Option<OsString>>,
     env: Mutex<Option<Result<ToolEnv, String>>>,
     checks: Mutex<Option<Vec<Check>>>,
+    /// Override flags `claude rm` reported per session, kept here so the UI
+    /// can only confirm them, never supply its own.
+    pending_rm: Mutex<HashMap<String, Vec<String>>>,
     keepalive: Mutex<Option<Keepalive>>,
     snapshot: Mutex<Snapshot>,
     wake: (Mutex<bool>, Condvar),
@@ -72,6 +88,7 @@ impl AppState {
             path: Mutex::new(None),
             env: Mutex::new(None),
             checks: Mutex::new(None),
+            pending_rm: Mutex::new(HashMap::new()),
             keepalive: Mutex::new(None),
             snapshot: Mutex::new(Snapshot::default()),
             wake: (Mutex::new(false), Condvar::new()),
@@ -280,6 +297,43 @@ impl AppState {
             }
         }
         out
+    }
+
+    /// Delete a background session with `claude rm`. With `discard`, pass the
+    /// override flags Claude reported on the previous attempt.
+    pub fn delete_session(&self, id: &str, discard: bool) -> Result<DeleteResult> {
+        let env = self.tool_env(true).map_err(|e| anyhow!(e))?;
+        if self
+            .snapshot()
+            .sessions
+            .iter()
+            .all(|v| v.session.attach_id() != Some(id))
+        {
+            return Err(anyhow!("session {id} is not a background session"));
+        }
+        // Let go of our hidden client first. If the delete fails, the next
+        // refresh re-attaches it.
+        if self.config().keepalive {
+            let _ = self.with_keepalive(&env, |ka| ka.release(id));
+        }
+
+        let flags = if discard {
+            lock(&self.pending_rm).remove(id).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let result = claude::remove_session(&env, id, &flags);
+        self.wake();
+        match result? {
+            claude::Removal::Removed(message) => {
+                lock(&self.pending_rm).remove(id);
+                Ok(DeleteResult::Deleted { message })
+            }
+            claude::Removal::NeedsConfirmation { message, flags } => {
+                lock(&self.pending_rm).insert(id.to_owned(), flags);
+                Ok(DeleteResult::NeedsDiscard { message })
+            }
+        }
     }
 
     pub fn set_config(&self, mut new: Config) -> Result<()> {

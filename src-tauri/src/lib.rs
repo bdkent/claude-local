@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager, State, WebviewWindow, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_positioner::{Position, WindowExt};
 
-use state::{AppState, NewSession, Snapshot};
+use state::{AppState, DeleteResult, NewSession, Snapshot};
 
 pub(crate) const TRAY_ID: &str = "main";
 
@@ -29,6 +29,18 @@ fn refresh(state: State<Arc<AppState>>) {
 #[tauri::command]
 fn open_session(state: State<Arc<AppState>>, id: String) -> Result<(), String> {
     state.open_session(&id).map_err(|e| format!("{e:#}"))
+}
+
+// Async because `claude rm` may take a moment to remove a worktree.
+#[tauri::command]
+async fn delete_session(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    discard: bool,
+) -> Result<DeleteResult, String> {
+    state
+        .delete_session(&id, discard)
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[derive(Serialize)]
@@ -264,6 +276,7 @@ pub fn run() {
             save_settings,
             new_session_defaults,
             start_session,
+            delete_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running claude-local");

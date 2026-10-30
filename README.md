@@ -18,6 +18,11 @@ Control.
   run `claude attach <id>` in Terminal, iTerm2, Ghostty, WezTerm, kitty,
   Alacritty, Windows Terminal, PowerShell, or a custom command. The hidden
   keep-alive stays attached alongside it.
+- **Delete.** Hover a background session and click the trash icon (or select
+  it and press Delete). After you confirm, it runs `claude rm <id>`, which
+  deletes the session and its worktree. If the worktree has unpushed commits,
+  Claude refuses and the dialog shows its message with a second, explicit
+  **Discard unpushed work and delete** button.
 - **New session.** Hit **＋**, pick a project folder (recent and active ones
   are listed, or choose any folder), give it a name and a first prompt.
   **Start in background** runs `claude --bg --name … "prompt"` there.

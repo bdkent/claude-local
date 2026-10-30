@@ -125,6 +125,9 @@ async function openSession(s: SessionView) {
   }
 }
 
+const TRASH_ICON =
+  '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5h6.6L12 4M6.75 6.5v4.5M9.25 6.5v4.5"/></svg>';
+
 function sessionRow(s: SessionView): HTMLLIElement {
   const status = s.status ?? "unknown";
   const dotClass = status === "busy" ? "busy" : status === "idle" ? "idle" : "unknown";
@@ -156,10 +159,18 @@ function sessionRow(s: SessionView): HTMLLIElement {
       e.stopPropagation();
       openSession(s);
     });
-    row.append(open);
+    const del = el("button", { className: "delete", title: "Delete session…", ariaLabel: "Delete session" });
+    del.innerHTML = TRASH_ICON;
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      confirmDelete(s);
+    });
+    del.addEventListener("dblclick", (e) => e.stopPropagation());
+    row.append(open, del);
     row.addEventListener("dblclick", () => openSession(s));
     row.addEventListener("keydown", (e) => {
       if (e.key === "Enter") openSession(s);
+      if (e.key === "Delete" || e.key === "Backspace") confirmDelete(s);
     });
   }
   return row;
@@ -472,6 +483,69 @@ newForm.addEventListener("submit", async (e) => {
   } finally {
     submit.disabled = false;
     submit.textContent = "Start";
+  }
+});
+
+// --- delete session ------------------------------------------------------
+
+type DeleteResult = { status: "deleted"; message: string } | { status: "needsDiscard"; message: string };
+
+const deleteDialog = $<HTMLDialogElement>("#confirm-delete");
+const deleteForm = $<HTMLFormElement>("#delete-form");
+const deleteButton = $<HTMLButtonElement>("#confirm-delete-button");
+// The session being deleted, and whether Claude has asked to discard work.
+let deleting: { session: SessionView; discard: boolean } | null = null;
+
+function confirmDelete(s: SessionView) {
+  if (!s.attachable || !s.id) return;
+  deleting = { session: s, discard: false };
+  const name = s.name ?? s.sessionId.slice(0, 8);
+  $("#delete-title").textContent = `Delete “${name}”?`;
+  $("#delete-body").textContent =
+    "This stops the session and deletes it, along with its worktree if it has one. Its conversation can't be resumed afterwards.";
+  $("#delete-where").textContent = `${s.cwd} · ${s.id}`;
+  $("#delete-claude").hidden = true;
+  $("#delete-error").hidden = true;
+  deleteButton.textContent = "Delete";
+  deleteButton.disabled = false;
+  deleteDialog.showModal();
+  // Safer default: Enter cancels until the user moves to Delete.
+  $<HTMLButtonElement>("#cancel-delete").focus();
+}
+
+$("#cancel-delete").addEventListener("click", () => deleteDialog.close());
+deleteDialog.addEventListener("close", () => (deleting = null));
+
+deleteForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!deleting) return;
+  const { session, discard } = deleting;
+  const label = deleteButton.textContent;
+  deleteButton.disabled = true;
+  deleteButton.textContent = "Deleting…";
+  try {
+    const result = await invoke<DeleteResult>("delete_session", { id: session.id, discard });
+    if (result.status === "deleted") {
+      deleteDialog.close();
+      showFlash(`Deleted ${session.name ?? session.id}`);
+      return;
+    }
+    // Claude refused because work would be lost: show why, ask once more.
+    deleting = { session, discard: true };
+    $("#delete-body").textContent =
+      "Claude didn't delete it: the session has work that isn't pushed. Deleting anyway discards that work permanently.";
+    const claudeSays = $("#delete-claude");
+    claudeSays.textContent = result.message;
+    claudeSays.hidden = false;
+    deleteButton.disabled = false;
+    deleteButton.textContent = "Discard unpushed work and delete";
+    $<HTMLButtonElement>("#cancel-delete").focus();
+  } catch (err) {
+    const box = $("#delete-error");
+    box.textContent = String(err);
+    box.hidden = false;
+    deleteButton.disabled = false;
+    deleteButton.textContent = label;
   }
 });
 
