@@ -67,6 +67,8 @@ pub struct Snapshot {
 
 pub struct AppState {
     pub visible: AtomicBool,
+    /// When the list window last lost focus, for the tray click toggle.
+    pub focus_lost_at: Mutex<Option<std::time::Instant>>,
     config: Mutex<Config>,
     /// The login shell's PATH. Finding it starts a shell, so it's cached.
     path: Mutex<Option<OsString>>,
@@ -88,6 +90,7 @@ impl AppState {
     pub fn new(config: Config) -> Self {
         Self {
             visible: AtomicBool::new(false),
+            focus_lost_at: Mutex::new(None),
             config: Mutex::new(config),
             path: Mutex::new(None),
             env: Mutex::new(None),

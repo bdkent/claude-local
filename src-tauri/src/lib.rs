@@ -175,9 +175,26 @@ fn hide_window(app: &AppHandle) {
     set_visible(app, false);
 }
 
+/// Tray click: hide the list if it's in front, otherwise bring it to the front.
+///
+/// Checking only "visible" needed two clicks when the list was buried behind
+/// other apps' windows: the first click hid it, the second showed it. On
+/// Windows, clicking the tray takes focus from the list just before the click
+/// arrives, so focus lost a moment ago still counts as "in front".
 fn toggle_window(app: &AppHandle) {
-    let visible = main_window(app).is_some_and(|w| w.is_visible().unwrap_or(false));
-    if visible {
+    let Some(window) = main_window(app) else {
+        return;
+    };
+    let visible = window.is_visible().unwrap_or(false);
+    let just_lost_focus = app
+        .state::<Arc<AppState>>()
+        .focus_lost_at
+        .lock()
+        .ok()
+        .and_then(|t| *t)
+        .is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(300));
+    let in_front = window.is_focused().unwrap_or(false) || just_lost_focus;
+    if visible && in_front {
         hide_window(app);
     } else {
         show_window(app);
@@ -261,12 +278,23 @@ pub fn run() {
             state::spawn_poller(app.handle().clone(), state);
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|window, event| match event {
             // Closing the list hides it; the app lives in the tray.
-            if let WindowEvent::CloseRequested { api, .. } = event {
+            WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 hide_window(window.app_handle());
             }
+            WindowEvent::Focused(false) => {
+                if let Ok(mut t) = window
+                    .app_handle()
+                    .state::<Arc<AppState>>()
+                    .focus_lost_at
+                    .lock()
+                {
+                    *t = Some(std::time::Instant::now());
+                }
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
