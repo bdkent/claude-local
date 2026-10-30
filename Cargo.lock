@@ -500,7 +500,7 @@ dependencies = [
 
 [[package]]
 name = "claude-local"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "claude-local-core",
@@ -516,7 +516,7 @@ dependencies = [
 
 [[package]]
 name = "claude-local-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dirs 6.0.0",
