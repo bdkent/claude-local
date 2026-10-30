@@ -142,13 +142,34 @@ async function openSession(s: SessionView) {
   }
 }
 
-const STATUS_TIPS: Record<string, string> = {
-  busy: "Busy: Claude is working",
-  idle: "Idle: waiting for your input",
-  blocked: "Blocked: waiting for you (for example a permission prompt). Open it to respond.",
-  stopped: "Stopped: no process is running. Opening it resumes the session.",
-  unknown: "Status unknown",
+/**
+ * The word shown under a session's name. Background sessions report a `state`
+ * (running, done, blocked…) and interactive ones a `status` (busy, idle); the
+ * dot is always chosen from this same word so the two never disagree.
+ */
+function stateWord(s: SessionView): string {
+  if (!s.running) return "stopped";
+  const word = s.kind === "background" ? (s.state ?? s.status) : (s.status ?? s.state);
+  return word ?? "unknown";
+}
+
+/** Dot style and tooltip for each state word. */
+const DOTS: Record<string, [string, string]> = {
+  running: ["active", "Running: Claude is working"],
+  busy: ["active", "Busy: Claude is working"],
+  blocked: ["blocked", "Blocked: waiting for you (for example a permission prompt). Open it to respond."],
+  done: ["resting", "Done: finished, waiting for your next message"],
+  idle: ["resting", "Idle: waiting for your input"],
+  stopped: ["stopped", "Stopped: no process is running. Opening it resumes the session."],
 };
+
+function statusDot(s: SessionView): HTMLSpanElement {
+  const word = stateWord(s);
+  const [cls, tip] = DOTS[word] ?? ["unknown", `State: ${word}`];
+  // Show the raw values too, so nothing Claude reports is hidden.
+  const raw = [s.state && `state: ${s.state}`, s.status && `status: ${s.status}`].filter(Boolean).join(" · ");
+  return withTip(el("span", { className: `dot ${cls}` }), raw ? `${tip}\n${raw}` : tip);
+}
 
 const LINK_ICON =
   '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 9.5a3 3 0 0 0 4.2 0l2.1-2.1a3 3 0 0 0-4.2-4.2l-.9.9M9.5 6.5a3 3 0 0 0-4.2 0L3.2 8.6a3 3 0 0 0 4.2 4.2l.9-.9"/></svg>';
@@ -157,14 +178,7 @@ const TRASH_ICON =
   '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5h6.6L12 4M6.75 6.5v4.5M9.25 6.5v4.5"/></svg>';
 
 function sessionRow(s: SessionView): HTMLLIElement {
-  // `blocked` (waiting for you) matters most, and often arrives without a status.
-  const status = !s.running ? "stopped" : s.state === "blocked" ? "blocked" : (s.status ?? "unknown");
-  const dotClass = ["busy", "idle", "blocked", "stopped"].includes(status) ? status : "unknown";
-  const meta = [
-    s.kind === "background" ? "bg" : s.kind,
-    s.running ? (s.state ?? status) : "stopped",
-    s.startedAt ? ago(s.startedAt) : "",
-  ]
+  const meta = [s.kind === "background" ? "bg" : s.kind, stateWord(s), s.startedAt ? ago(s.startedAt) : ""]
     .filter(Boolean)
     .join(" · ");
 
@@ -187,7 +201,7 @@ function sessionRow(s: SessionView): HTMLLIElement {
       .join("\n"),
   );
   row.append(
-    withTip(el("span", { className: `dot ${dotClass}` }), STATUS_TIPS[dotClass]),
+    statusDot(s),
     el(
       "span",
       { className: "label" },

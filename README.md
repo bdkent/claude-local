@@ -26,8 +26,9 @@ through Remote Control.
 
 - **Buddy list.** Click the tray icon for a compact list grouped by project.
   Filter by background or interactive, by project, or by name. The dot shows
-  status: green is busy, amber is idle, pulsing red is blocked (waiting for
-  you, e.g. a permission prompt).
+  the state shown under the name: green is running, grey-blue is done or idle,
+  pulsing red is blocked (waiting for you, e.g. a permission prompt), and a
+  hollow ring is stopped.
 - **Keep-alive.** Claude Code idles a background session after 8 hours with no
   client attached. Claude Local holds a hidden `claude attach <id>` on every
   background session (marked with a link icon) so that never happens.
