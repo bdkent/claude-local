@@ -1,7 +1,9 @@
 name: Release
 
-# Push a tag like v0.2.0 to build installers and attach them to a draft
-# GitHub Release. Review the draft, then publish it.
+# Builds the macOS and Windows installers and attaches them to a draft
+# GitHub Release; review the draft, then publish it. Start it either by
+# pushing a tag like v0.2.0, or from the Actions tab with "Run workflow",
+# which tags the current commit with the version from package.json.
 on:
   push:
     tags: ["v*"]

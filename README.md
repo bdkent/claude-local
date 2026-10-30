@@ -126,7 +126,9 @@ To regenerate icons: `python3 scripts/make-icons.py && npx tauri icon src-tauri/
 ## Releasing
 
 1. Bump `version` in `package.json` (the app version is read from it).
-2. Commit, then tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+2. Commit, then either tag and push (`git tag v0.2.0 && git push origin v0.2.0`)
+   or open Actions → **Release** → **Run workflow** on `master`, which creates
+   the tag from the `package.json` version.
 3. The **Release** workflow builds the macOS universal `.dmg` and the Windows
    installers, and attaches them to a **draft** GitHub Release. Review it and
    publish.
