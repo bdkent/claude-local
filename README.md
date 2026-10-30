@@ -20,9 +20,9 @@ macOS and Windows
 <sub>The session list, starting a new session, and the second confirmation
 before discarding unpushed work. Shown with sample data.</sub>
 
-Built for running `claude --bg` sessions locally (for example Unity projects
-that need a real GPU and a warm editor) and driving them through Remote
-Control.
+Built for running `claude --bg` sessions locally (for example projects that
+need a real GPU, a slow-to-start editor or a local toolchain) and driving them
+through Remote Control.
 
 - **Buddy list.** Click the tray icon for a compact list grouped by project.
   Filter by background or interactive, by project, or by name. The dot shows
@@ -135,3 +135,7 @@ macOS builds are ad-hoc signed. To ship notarized builds, add an Apple
 Developer ID certificate and the `APPLE_*` secrets described in
 [Tauri's macOS signing guide](https://tauri.app/distribute/sign/macos/) to the
 workflow.
+
+## License
+
+[MIT](LICENSE)
