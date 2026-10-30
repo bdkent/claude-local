@@ -73,15 +73,16 @@
           ? `/Users/you/projects/${s.project}\nBackground session · double-click to open`
           : "Interactive sessions live in the terminal that started them",
       },
+      // Same rule as the app: `state` sets the colour, `status: busy` pulses.
       h("span", {
-        className: `dot ${s.status}`,
-        "data-tip": s.status === "busy" ? "Busy: Claude is working" : "Idle: waiting for your input",
+        className: `dot ${({ working: "green", done: "blue", blocked: "orange" })[s.state] || "gray"}${s.status === "busy" ? " pulsing" : ""}`,
+        "data-tip": `state: ${s.state || "—"} · status: ${s.status || "—"}`,
       }),
       h(
         "span",
         { className: "lbl" },
         h("span", { className: "nm" }, s.name),
-        h("span", { className: "mt" }, [bg ? "bg" : "interactive", s.state || s.status, ago(s.started)].join(" · ")),
+        h("span", { className: "mt" }, [bg ? "bg" : "interactive", s.state, s.status, ago(s.started)].filter(Boolean).join(" · ")),
       ),
     );
     li._session = s;
@@ -188,7 +189,7 @@
     if (!term.hidden && !e.target.closest("#demo-term, .open, .row")) term.hidden = true;
   });
 
-  // Status dots drift between busy and idle, like real sessions.
+  // Sessions drift between working and done, like real ones.
   setInterval(() => {
     const bg = sessions.filter((s) => s.kind === "background");
     const s = bg[Math.floor(Math.random() * bg.length)];

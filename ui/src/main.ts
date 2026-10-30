@@ -17,7 +17,7 @@ interface SessionView {
   project: string;
   attachable: boolean;
   running: boolean;
-  activity: Activity;
+  dot: Dot;
   keptAlive: boolean;
 }
 
@@ -143,38 +143,24 @@ async function openSession(s: SessionView) {
   }
 }
 
-type Activity = "working" | "waiting" | "done" | "idle" | "stopped" | "unknown";
-
 /**
- * Dot class, label word and tooltip for each activity. The app works the
- * activity out from both `status` (is a turn in progress?) and `state` (where
- * a background task stands); see `Session::activity` in the Rust core.
+ * The status dot, worked out in the Rust core (`Session::dot`) the way
+ * `claude agents` shows it: `state` picks the colour, `status: busy` pulses.
  */
-const ACTIVITY: Record<Activity, { label: string; tip: string }> = {
-  working: { label: "working", tip: "Working: Claude is on a turn right now" },
-  waiting: {
-    label: "waiting",
-    tip: "Waiting for you: the turn ended before the task was done (Claude reports this as blocked). Open it to reply.",
-  },
-  done: { label: "done", tip: "Done: Claude finished the task" },
-  idle: { label: "idle", tip: "Idle: waiting at the prompt" },
-  stopped: { label: "stopped", tip: "Stopped: no process is running. Opening it resumes the session." },
-  unknown: { label: "unknown", tip: "Claude reported a state this app doesn't recognise yet" },
-};
+interface Dot {
+  color: "green" | "blue" | "orange" | "gray";
+  pulsing: boolean;
+}
 
-/** The word under a session's name; unknown states show what Claude reported. */
-function activityLabel(s: SessionView): string {
-  return s.activity in ACTIVITY && s.activity !== "unknown"
-    ? ACTIVITY[s.activity].label
-    : (s.state ?? s.status ?? "unknown");
+/** Claude's own `state` and `status` values, exactly as reported. */
+function rawValues(s: SessionView): string[] {
+  return [s.state, s.status].filter((v): v is string => !!v);
 }
 
 function statusDot(s: SessionView): HTMLSpanElement {
-  // Show the raw values too, so nothing Claude reports is hidden.
-  const raw = [s.state && `state: ${s.state}`, s.status && `status: ${s.status}`].filter(Boolean).join(" · ");
-  const activity: Activity = s.activity in ACTIVITY ? s.activity : "unknown";
-  const tip = ACTIVITY[activity].tip;
-  return withTip(el("span", { className: `dot ${activity}` }), raw ? `${tip}\n${raw}` : tip);
+  const cls = `dot ${s.dot.color}${s.dot.pulsing ? " pulsing" : ""}`;
+  const tip = `state: ${s.state ?? "—"} · status: ${s.status ?? "—"}`;
+  return withTip(el("span", { className: cls }), tip);
 }
 
 const LINK_ICON =
@@ -184,7 +170,7 @@ const TRASH_ICON =
   '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5h6.6L12 4M6.75 6.5v4.5M9.25 6.5v4.5"/></svg>';
 
 function sessionRow(s: SessionView): HTMLLIElement {
-  const meta = [s.kind === "background" ? "bg" : s.kind, activityLabel(s), s.startedAt ? ago(s.startedAt) : ""]
+  const meta = [s.kind === "background" ? "bg" : s.kind, ...rawValues(s), s.startedAt ? ago(s.startedAt) : ""]
     .filter(Boolean)
     .join(" · ");
 

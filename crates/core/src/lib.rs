@@ -13,5 +13,5 @@ pub use config::Config;
 pub use doctor::Check;
 pub use env::ToolEnv;
 pub use keepalive::{Keepalive, Report};
-pub use session::{Activity, Session, SessionKind};
+pub use session::{Dot, DotColor, Session, SessionKind};
 pub use terminal::{Target, TerminalApp};

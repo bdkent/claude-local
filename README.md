@@ -26,10 +26,10 @@ through Remote Control.
 
 - **Buddy list.** Click the tray icon for a compact list grouped by project.
   Filter by background or interactive, by project, or by name. The dot shows
-  what the session is doing, combining Claude's `status` and `state`: green
-  is working (a turn is in progress), amber is waiting for you (the turn
-  ended before the task was done; Claude calls this `blocked`), grey-blue is
-  done or idle, and a hollow ring is stopped. Hover the dot for the raw values.
+  Claude's own values, the way `claude agents` does: the colour comes from
+  `state` (green `working`, blue `done`, orange `blocked`, gray for none or
+  anything else) and the dot pulses while `status` is `busy`. Each row lists
+  the literal `state` and `status` values.
 - **Keep-alive.** Claude Code idles a background session after 8 hours with no
   client attached. Claude Local holds a hidden `claude attach <id>` on every
   background session (marked with a link icon) so that never happens.

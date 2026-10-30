@@ -7,9 +7,9 @@
   --hover: #f0ebe4;
   --accent: #c96442;
   --accent-text: #ffffff;
-  --busy: #3fb760;
-  --resting: #8496ad;
-  --waiting: #e39b2d;
+  --dot-green: #3fb760;
+  --dot-blue: #3b82d6;
+  --dot-orange: #e8862a;
   --unknown: #a8a29a;
   --error-bg: #fbe9e6;
   --error-text: #8f2d1a;
@@ -35,8 +35,9 @@
     --warn-bg: #3f3418;
     --warn-text: #f3d48a;
     --danger: #e5554a;
-    --resting: #7b8ca3;
-    --waiting: #f0a73a;
+    --dot-green: #4cc76d;
+    --dot-blue: #5b9cf0;
+    --dot-orange: #f0983c;
     --tip-bg: #efebe5;
     --tip-text: #1f1d1a;
     color-scheme: dark;
@@ -297,26 +298,47 @@ button.icon:hover {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--unknown);
+  --dot: var(--unknown);
+  background: var(--dot);
 }
 
-.dot.working {
-  background: var(--busy);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--busy) 25%, transparent);
+/* Mirrors `claude agents`: `state` sets the colour, `status: busy` pulses. */
+.dot.green {
+  --dot: var(--dot-green);
 }
 
-.dot.waiting {
-  background: var(--waiting);
+.dot.blue {
+  --dot: var(--dot-blue);
 }
 
-.dot.done,
-.dot.idle {
-  background: var(--resting);
+.dot.orange {
+  --dot: var(--dot-orange);
 }
 
-.dot.stopped {
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--unknown);
+.dot.gray {
+  --dot: var(--unknown);
+}
+
+.dot.pulsing {
+  animation: busy-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes busy-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--dot) 0%, transparent);
+    opacity: 0.75;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot.pulsing {
+    animation: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot) 30%, transparent);
+  }
 }
 
 .label {

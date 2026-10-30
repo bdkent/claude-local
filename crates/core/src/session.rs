@@ -7,8 +7,10 @@ use serde::{Deserialize, Serialize};
 /// Two fields describe what a session is doing:
 /// - `status` (`busy` / `idle`, sometimes absent): whether a turn is in
 ///   progress right now.
-/// - `state` (background sessions only: `working`, `blocked`, `done`): where
-///   the session's task stands.
+/// - `state` (`working`, `blocked`, `done`, seen on background sessions):
+///   where the session's task stands.
+///
+/// Either may be missing.
 ///
 /// Background sessions also carry a short `id` (what `claude attach` takes).
 /// `pid` is sometimes absent, even for active sessions.
@@ -45,21 +47,25 @@ impl Default for Session {
     }
 }
 
-/// What a session is doing, combining `status` and `state`. This is what the
-/// UI's status dot shows.
+/// The status dot, mirroring `claude agents`: `state` picks the colour and
+/// `status: busy` makes it pulse. Either field may be missing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Dot {
+    pub color: DotColor,
+    pub pulsing: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Activity {
-    /// A turn is in progress.
-    Working,
-    /// The turn ended before the task was done; it's the user's move.
-    Waiting,
-    /// The task is finished.
-    Done,
-    /// An interactive session sitting at its prompt.
-    Idle,
-    Stopped,
-    Unknown,
+pub enum DotColor {
+    /// `state: working`
+    Green,
+    /// `state: done`
+    Blue,
+    /// `state: blocked`
+    Orange,
+    /// No state, or one not listed above.
+    Gray,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -87,20 +93,16 @@ impl Session {
         !matches!(self.state.as_deref(), Some("stopped" | "exited"))
     }
 
-    /// Combine `status` and `state`. A turn in progress (`status: busy`) wins
-    /// over a `state` left over from before it started, e.g. `blocked` just
-    /// after the user replied.
-    pub fn activity(&self) -> Activity {
-        if !self.is_running() {
-            return Activity::Stopped;
-        }
-        match (self.status.as_deref(), self.state.as_deref()) {
-            (Some("busy"), _) => Activity::Working,
-            (_, Some("working" | "running")) => Activity::Working,
-            (_, Some("blocked")) => Activity::Waiting,
-            (_, Some("done")) => Activity::Done,
-            (Some("idle"), None) => Activity::Idle,
-            _ => Activity::Unknown,
+    pub fn dot(&self) -> Dot {
+        let color = match self.state.as_deref() {
+            Some("working") => DotColor::Green,
+            Some("done") => DotColor::Blue,
+            Some("blocked") => DotColor::Orange,
+            _ => DotColor::Gray,
+        };
+        Dot {
+            color,
+            pulsing: self.status.as_deref() == Some("busy"),
         }
     }
 
@@ -200,27 +202,32 @@ mod tests {
     }
 
     /// Every status/state combination seen in real `claude agents --json`
-    /// output, plus interactive and unexpected ones.
+    /// output, plus missing and unexpected values.
     #[test]
-    fn activity_combines_status_and_state() {
-        let check = |status: Option<&str>, state: Option<&str>, want: Activity| {
+    fn dot_colour_follows_state_and_busy_pulses() {
+        use DotColor::*;
+        let check = |status: Option<&str>, state: Option<&str>, color: DotColor, pulsing: bool| {
             let s = Session {
                 status: status.map(Into::into),
                 state: state.map(Into::into),
                 ..Session::default()
             };
-            assert_eq!(s.activity(), want, "status {status:?}, state {state:?}");
+            assert_eq!(
+                s.dot(),
+                Dot { color, pulsing },
+                "status {status:?}, state {state:?}"
+            );
         };
-        check(Some("idle"), Some("done"), Activity::Done);
-        check(None, Some("blocked"), Activity::Waiting);
-        check(Some("idle"), Some("blocked"), Activity::Waiting);
-        check(Some("busy"), Some("blocked"), Activity::Working);
-        check(Some("busy"), Some("working"), Activity::Working);
-        check(None, Some("working"), Activity::Working);
-        check(Some("busy"), None, Activity::Working);
-        check(Some("idle"), None, Activity::Idle);
-        check(Some("idle"), Some("paused"), Activity::Unknown);
-        check(Some("idle"), Some("stopped"), Activity::Stopped);
+        check(Some("idle"), Some("done"), Blue, false);
+        check(None, Some("blocked"), Orange, false);
+        check(Some("idle"), Some("blocked"), Orange, false);
+        check(Some("busy"), Some("blocked"), Orange, true);
+        check(Some("busy"), Some("working"), Green, true);
+        check(None, Some("working"), Green, false);
+        check(Some("busy"), None, Gray, true);
+        check(Some("idle"), None, Gray, false);
+        check(None, None, Gray, false);
+        check(Some("busy"), Some("something-new"), Gray, true);
     }
 
     #[test]

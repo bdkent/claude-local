@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
 use claude_local_core::{
-    claude, doctor, env, keepalive, terminal, Activity, Check, Config, Keepalive, Session,
+    claude, doctor, env, keepalive, terminal, Check, Config, Dot, DotColor, Keepalive, Session,
     SessionKind, Target, TerminalApp, ToolEnv,
 };
 use serde::{Deserialize, Serialize};
@@ -24,8 +24,8 @@ pub struct SessionView {
     pub attachable: bool,
     /// Has a live process; a stopped background session doesn't.
     pub running: bool,
-    /// What the status dot shows; combines `status` and `state`.
-    pub activity: Activity,
+    /// The status dot: colour from `state`, pulsing while `status` is busy.
+    pub dot: Dot,
     pub kept_alive: bool,
 }
 
@@ -231,7 +231,7 @@ impl AppState {
                             project: s.project(),
                             attachable: s.attach_id().is_some(),
                             running: s.is_running(),
-                            activity: s.activity(),
+                            dot: s.dot(),
                             kept_alive: s.attach_id().is_some_and(|id| alive.contains(id)),
                             session: s,
                         })
@@ -388,10 +388,10 @@ fn update_tray(app: &AppHandle, snap: &Snapshot) {
             let waiting = snap
                 .sessions
                 .iter()
-                .filter(|s| s.activity == Activity::Waiting)
+                .filter(|s| s.dot.color == DotColor::Orange)
                 .count();
             let waiting = if waiting > 0 {
-                format!(" · {waiting} waiting for you")
+                format!(" · {waiting} blocked")
             } else {
                 String::new()
             };

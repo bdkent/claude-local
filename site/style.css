@@ -11,7 +11,6 @@
   --accent-2: #f2b48a;
   --glow: rgb(224 123 85 / 0.35);
   --busy: #4cc76d;
-  --idle: #7b8ca3;
   --radius: 14px;
   --max: 1160px;
   color-scheme: dark;
@@ -481,13 +480,44 @@ h3 {
   transition: background 0.3s, box-shadow 0.3s;
 }
 
-.dot.busy {
-  background: var(--busy);
-  box-shadow: 0 0 0 3px rgb(76 199 109 / 0.25);
+.dot.green {
+  --dot: var(--busy);
+  background: var(--dot);
 }
 
-.dot.idle {
-  background: var(--idle);
+.dot.blue {
+  --dot: #5b9cf0;
+  background: var(--dot);
+}
+
+.dot.orange {
+  --dot: #f0983c;
+  background: var(--dot);
+}
+
+.dot.gray {
+  --dot: #a8a29a;
+}
+
+.dot.pulsing {
+  animation: busy-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes busy-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--dot) 0%, transparent);
+    opacity: 0.75;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot.pulsing {
+    animation: none;
+  }
 }
 
 .lbl {
