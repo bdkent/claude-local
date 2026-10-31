@@ -9,10 +9,12 @@
   <body>
     <main id="list-view">
       <header class="toolbar">
-        <div class="segmented" role="tablist" aria-label="Session kind">
-          <button data-kind="all" class="active" data-tip="Show all sessions">All</button>
-          <button data-kind="background" data-tip="Show only background sessions (started with claude --bg)">Bg</button>
-          <button data-kind="interactive" data-tip="Show only interactive sessions (running in a terminal window)">Interactive</button>
+        <div class="segmented" role="group" aria-label="Listing">
+          <button id="show-all" aria-pressed="true" data-tip="On: everything claude agents --json --all lists. Off: only claude agents --json.">All</button>
+        </div>
+        <div class="segmented grow" role="group" aria-label="Session kinds">
+          <button data-kind="background" aria-pressed="true" data-tip="Show background sessions (started with claude --bg)">Bg</button>
+          <button data-kind="interactive" aria-pressed="true" data-tip="Show interactive sessions">Interactive</button>
         </div>
         <button id="new-session-button" class="icon" data-tip="Start a new session in a project folder" aria-label="New session">＋</button>
         <button id="refresh" class="icon" data-tip="Refresh the list now" aria-label="Refresh">↻</button>

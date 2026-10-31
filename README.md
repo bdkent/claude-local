@@ -25,7 +25,9 @@ need a real GPU, a slow-to-start editor or a local toolchain) and driving them
 through Remote Control.
 
 - **Buddy list.** Click the tray icon for a compact list grouped by project.
-  Filter by background or interactive, by project, or by name. The dot shows
+  **All** toggles between everything `claude agents --json --all` lists and
+  only what plain `claude agents --json` lists; **Bg** and **Interactive**
+  toggle independently. You can also filter by project or name. The dot shows
   Claude's own values, the way `claude agents` does: the colour comes from
   `state` (green `working`, blue `done`, orange `blocked`, gray for none or
   anything else) and the dot pulses while `status` is `busy`. Each row lists
@@ -78,9 +80,14 @@ example `brew install tmux`). The card clears by itself once it's fixed.
 ## How it works
 
 Every few seconds (every 3 s while the list is open, every 30 s while it's
-hidden) the app runs `claude agents --json`. That lists interactive and
-background sessions with their `cwd`, `kind`, `status` and, for background
-sessions, the short `id` that `claude attach` takes.
+hidden) the app runs `claude agents --json --all`, the same sessions the
+`claude agents` view shows, with their `cwd`, `kind`, `state`, `status` and,
+for background sessions, the short `id` that `claude attach` takes.
+
+It also runs plain `claude agents --json`, which leaves out sessions whose
+process has already ended (for example after the idle timeout). The **All**
+toggle switches between the two lists. Keep-alive only attaches to sessions
+in the plain list, since attaching to an ended one would start it again.
 
 Keep-alive then reconciles: background sessions without a hidden client get
 one, and clients whose session has gone away are stopped.

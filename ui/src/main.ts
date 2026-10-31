@@ -16,7 +16,8 @@ interface SessionView {
   state?: string;
   project: string;
   attachable: boolean;
-  running: boolean;
+  /** In plain `claude agents --json` (not only `--all`); decides keep-alive. */
+  active: boolean;
   dot: Dot;
   keptAlive: boolean;
 }
@@ -60,7 +61,6 @@ interface SettingsView {
   configPath?: string;
 }
 
-type KindFilter = "all" | "background" | "interactive";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
 
@@ -84,7 +84,14 @@ const prefs = {
 };
 
 let snapshot: Snapshot | null = null;
-let kindFilter: KindFilter = prefs.load("kind", "all");
+// "All" on: everything `claude agents --json --all` lists. Off: only what
+// plain `claude agents --json` lists (`active`).
+let showAll: boolean = prefs.load("showAll", true);
+// Bg and Interactive toggle independently.
+const kinds: Record<"background" | "interactive", boolean> = prefs.load("kinds", {
+  background: true,
+  interactive: true,
+});
 let projectFilter: string = prefs.load("project", "");
 let search = "";
 // A short-lived message in the footer, e.g. after starting a session.
@@ -128,7 +135,8 @@ function visibleSessions(all: SessionView[]): SessionView[] {
   const q = search.trim().toLowerCase();
   return all.filter(
     (s) =>
-      (kindFilter === "all" || s.kind === kindFilter) &&
+      (showAll || s.active) &&
+      (s.kind === "other" || kinds[s.kind]) &&
       (!projectFilter || s.project === projectFilter) &&
       (!q || displayName(s).toLowerCase().includes(q) || s.project.toLowerCase().includes(q)),
   );
@@ -183,11 +191,9 @@ function sessionRow(s: SessionView): HTMLLIElement {
     [
       s.cwd,
       `${kind}${s.state ? ` · ${s.state}` : ""}${started}`,
-      !s.attachable
-        ? "Interactive sessions live in the terminal that started them"
-        : s.running
-          ? `Double-click to open in ${terminalLabel()}`
-          : `Not running. Double-click to resume it in ${terminalLabel()}`,
+      s.attachable
+        ? `Double-click to open in ${terminalLabel()}`
+        : "Interactive sessions live in the terminal that started them",
     ]
       .filter(Boolean)
       .join("\n"),
@@ -283,7 +289,8 @@ function render() {
   else hideBanner();
 
   // Stopped sessions aren't kept alive (that would resume them), so don't count them.
-  const bg = sessions.filter((s) => s.kind === "background" && s.running);
+  // Sessions only `--all` lists have timed out; keep-alive leaves them be.
+  const bg = sessions.filter((s) => s.kind === "background" && s.active);
   const kept = bg.filter((s) => s.keptAlive).length;
   const time = new Date(snapshot.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   $("#status").textContent =
@@ -400,17 +407,28 @@ function hideBanner() {
 
 // --- filters -------------------------------------------------------------
 
-function setKind(kind: KindFilter) {
-  kindFilter = kind;
-  prefs.save("kind", kind);
-  document.querySelectorAll<HTMLButtonElement>(".segmented button").forEach((b) => {
-    b.classList.toggle("active", b.dataset.kind === kind);
+function syncToggles() {
+  $("#show-all").setAttribute("aria-pressed", String(showAll));
+  document.querySelectorAll<HTMLButtonElement>("[data-kind]").forEach((b) => {
+    b.setAttribute("aria-pressed", String(kinds[b.dataset.kind as keyof typeof kinds]));
   });
-  render();
 }
 
-document.querySelectorAll<HTMLButtonElement>(".segmented button").forEach((b) => {
-  b.addEventListener("click", () => setKind(b.dataset.kind as KindFilter));
+$("#show-all").addEventListener("click", () => {
+  showAll = !showAll;
+  prefs.save("showAll", showAll);
+  syncToggles();
+  render();
+});
+
+document.querySelectorAll<HTMLButtonElement>("[data-kind]").forEach((b) => {
+  b.addEventListener("click", () => {
+    const kind = b.dataset.kind as keyof typeof kinds;
+    kinds[kind] = !kinds[kind];
+    prefs.save("kinds", kinds);
+    syncToggles();
+    render();
+  });
 });
 
 $<HTMLSelectElement>("#project").addEventListener("change", (e) => {
@@ -693,7 +711,7 @@ for (const type of ["mousedown", "keydown", "scroll", "blur"]) {
 
 // --- startup -------------------------------------------------------------
 
-setKind(kindFilter);
+syncToggles();
 listen<Snapshot>("snapshot", (e) => {
   snapshot = e.payload;
   render();

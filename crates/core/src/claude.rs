@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::Stdio;
 
@@ -6,22 +7,62 @@ use anyhow::{bail, Context, Result};
 use crate::env::ToolEnv;
 use crate::session::{parse_agents_json, Session};
 
-/// Run `claude agents --json` and parse the result.
+/// List sessions the way the `claude agents` view shows them: everything
+/// from `claude agents --json --all`, with `active` set on the ones plain
+/// `claude agents --json` also lists. Both run in parallel.
 pub fn list_sessions(env: &ToolEnv) -> Result<Vec<Session>> {
+    let (all, active) = std::thread::scope(|scope| {
+        let all = scope.spawn(|| run_agents(env, &["--json", "--all"]));
+        let active = run_agents(env, &["--json"]);
+        (
+            all.join()
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("listing thread panicked"))),
+            active,
+        )
+    });
+    // If `--all` isn't available, fall back to the active list alone.
+    Ok(merge_listings(all.ok(), active?))
+}
+
+/// Combine the two listings: every session from `all`, marked active when
+/// `active` lists it too. A session only in `active` is kept as well.
+pub fn merge_listings(all: Option<Vec<Session>>, active: Vec<Session>) -> Vec<Session> {
+    let active_keys: HashSet<String> = active.iter().map(|s| s.key().to_owned()).collect();
+    let mut merged = all.unwrap_or_default();
+    for s in &mut merged {
+        s.active = active_keys.contains(s.key());
+    }
+    let listed: HashSet<String> = merged.iter().map(|s| s.key().to_owned()).collect();
+    merged.extend(
+        active
+            .into_iter()
+            .filter(|s| !listed.contains(s.key()))
+            .map(|mut s| {
+                s.active = true;
+                s
+            }),
+    );
+    merged
+}
+
+fn run_agents(env: &ToolEnv, flags: &[&str]) -> Result<Vec<Session>> {
+    let command = format!("claude agents {}", flags.join(" "));
     let output = env
         .claude_command()
-        .args(["agents", "--json"])
+        .arg("agents")
+        .args(flags)
+        .stdin(Stdio::null())
         .output()
         .with_context(|| format!("running {}", env.claude.display()))?;
     if !output.status.success() {
         bail!(
-            "`claude agents --json` exited with {}: {}",
+            "`{command}` exited with {}: {}",
             output.status,
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_agents_json(stdout.trim()).context("parsing `claude agents --json` output")
+    parse_agents_json(stdout.trim()).with_context(|| format!("parsing `{command}` output"))
 }
 
 /// Arguments after `claude` that start a new session. Blank values are left out.
@@ -173,6 +214,53 @@ mod tests {
             new_session_args(None, Some("-v is broken")),
             ["--", "-v is broken"]
         );
+    }
+
+    #[test]
+    fn merge_marks_sessions_plain_json_lists_as_active() {
+        let parse = |json: &str| parse_agents_json(json).unwrap();
+        let all = parse(
+            r#"[{"sessionId":"a","kind":"background","status":"idle","state":"done"},
+                {"sessionId":"b","kind":"background","state":"done"},
+                {"sessionId":"i","kind":"interactive","status":"busy"}]"#,
+        );
+        let active = parse(
+            r#"[{"sessionId":"a","kind":"background","status":"idle","state":"done"},
+                {"sessionId":"i","kind":"interactive","status":"busy"},
+                {"sessionId":"new","kind":"background","state":"working"}]"#,
+        );
+        let merged = merge_listings(Some(all), active.clone());
+        let flags: Vec<(&str, bool)> = merged.iter().map(|s| (s.key(), s.active)).collect();
+        assert_eq!(
+            flags,
+            [("a", true), ("b", false), ("i", true), ("new", true)]
+        );
+
+        // Without --all, everything listed is active.
+        assert!(merge_listings(None, active).iter().all(|s| s.active));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_sessions_runs_both_listings() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("claude-local-list-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("claude");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\nif [ \"$3\" = --all ]; then echo '[{\"sessionId\":\"a\",\"kind\":\"background\",\"status\":\"idle\",\"state\":\"done\"},{\"sessionId\":\"b\",\"kind\":\"background\",\"state\":\"done\"}]'; else echo '[{\"sessionId\":\"a\",\"kind\":\"background\",\"status\":\"idle\",\"state\":\"done\"}]'; fi\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let env = ToolEnv {
+            path: std::env::var_os("PATH").unwrap_or_default(),
+            claude: fake,
+        };
+        let sessions = list_sessions(&env).unwrap();
+        let flags: Vec<(&str, bool)> = sessions.iter().map(|s| (s.key(), s.active)).collect();
+        assert_eq!(flags, [("a", true), ("b", false)]);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

@@ -7,6 +7,7 @@
   --hover: #f0ebe4;
   --accent: #c96442;
   --accent-text: #ffffff;
+  --pressed: #ffffff;
   --dot-green: #3fb760;
   --dot-blue: #3b82d6;
   --dot-orange: #e8862a;
@@ -35,6 +36,7 @@
     --warn-bg: #3f3418;
     --warn-text: #f3d48a;
     --danger: #e5554a;
+    --pressed: #4a4640;
     --dot-green: #4cc76d;
     --dot-blue: #5b9cf0;
     --dot-orange: #f0983c;
@@ -97,7 +99,6 @@ code {
 
 .segmented {
   display: flex;
-  flex: 1;
   background: var(--hover);
   border-radius: 7px;
   padding: 2px;
@@ -112,8 +113,12 @@ code {
   color: var(--muted);
 }
 
-.segmented button.active {
-  background: var(--panel);
+.segmented.grow {
+  flex: 1;
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--pressed);
   color: var(--text);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
 }

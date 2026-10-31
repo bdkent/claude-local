@@ -15,6 +15,8 @@
     { id: "a11b2c3d", name: "starship-shaders", project: "starship", kind: "background", status: "busy", state: "working", started: minutesAgo(41), kept: true },
     { id: null, name: "meadow-refactor", project: "meadow", kind: "interactive", status: "busy", started: minutesAgo(1560), kept: false },
     { id: "c42d8a15", name: "harbor-build", project: "harbor", kind: "background", status: "idle", state: "done", started: minutesAgo(300), kept: true },
+    // Only `claude agents --json --all` lists this one; its process has ended.
+    { id: "9d41e2b0", name: "harbor-audio-old", project: "harbor", kind: "background", state: "done", started: minutesAgo(900), kept: false, inactive: true },
   ];
   const newNames = [
     ["harbor", "harbor-lightmaps"],
@@ -23,7 +25,8 @@
     ["harbor", "harbor-audio"],
   ];
 
-  let kind = "all";
+  let showAll = true;
+  const kinds = { background: true, interactive: true };
   const list = $("#demo-list");
   const stage = $(".stage");
   if (!list || !stage) return;
@@ -48,7 +51,7 @@
   }
 
   function render() {
-    const shown = sessions.filter((s) => kind === "all" || s.kind === kind);
+    const shown = sessions.filter((s) => (showAll || !s.inactive) && kinds[s.kind]);
     const groups = new Map();
     for (const s of shown) groups.set(s.project, [...(groups.get(s.project) || []), s]);
     const out = [];
@@ -58,7 +61,7 @@
     }
     list.replaceChildren(...out);
 
-    const bg = sessions.filter((s) => s.kind === "background");
+    const bg = sessions.filter((s) => s.kind === "background" && !s.inactive);
     $("#demo-status").textContent = `keeping ${bg.filter((s) => s.kept).length}/${bg.length} alive`;
     $("#demo-tray-count").textContent = String(sessions.length);
   }
@@ -110,10 +113,17 @@
 
   // --- interactions ------------------------------------------------------
 
-  document.querySelectorAll(".seg button").forEach((b) =>
+  // Same filters as the app: "All" toggles --all; Bg and Interactive toggle independently.
+  $("#demo-all").addEventListener("click", (e) => {
+    showAll = !showAll;
+    e.currentTarget.classList.toggle("on", showAll);
+    render();
+    userActed();
+  });
+  document.querySelectorAll(".seg [data-kind]").forEach((b) =>
     b.addEventListener("click", () => {
-      kind = b.dataset.kind;
-      document.querySelectorAll(".seg button").forEach((x) => x.classList.toggle("on", x === b));
+      kinds[b.dataset.kind] = !kinds[b.dataset.kind];
+      b.classList.toggle("on", kinds[b.dataset.kind]);
       render();
       userActed();
     }),
@@ -125,9 +135,9 @@
     const s = { id: Math.random().toString(16).slice(2, 10), name: added > newNames.length ? `${name}-${added}` : name, project, kind: "background", status: "busy", state: "working", started: Date.now(), kept: false };
     s.fresh = true;
     sessions.push(s);
-    if (kind === "interactive") {
-      kind = "all";
-      document.querySelectorAll(".seg button").forEach((x) => x.classList.toggle("on", x.dataset.kind === "all"));
+    if (!kinds.background) {
+      kinds.background = true;
+      document.querySelector('.seg [data-kind="background"]').classList.add("on");
     }
     render();
     // The keep-alive attaches on the next poll.
@@ -191,7 +201,7 @@
 
   // Sessions drift between working and done, like real ones.
   setInterval(() => {
-    const bg = sessions.filter((s) => s.kind === "background");
+    const bg = sessions.filter((s) => s.kind === "background" && !s.inactive);
     const s = bg[Math.floor(Math.random() * bg.length)];
     s.status = s.status === "busy" ? "idle" : "busy";
     s.state = s.status === "busy" ? "working" : "done";

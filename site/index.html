@@ -86,10 +86,12 @@
 
           <div class="app" id="demo-app">
             <div class="app-toolbar">
-              <div class="seg" role="tablist">
-                <button class="on" data-kind="all" data-tip="Show all sessions">All</button>
-                <button data-kind="background" data-tip="Only background sessions (claude --bg)">Bg</button>
-                <button data-kind="interactive" data-tip="Only interactive sessions">Interactive</button>
+              <div class="seg fit" role="group">
+                <button class="on" id="demo-all" data-tip="On: everything claude agents --json --all lists. Off: only claude agents --json.">All</button>
+              </div>
+              <div class="seg" role="group">
+                <button class="on" data-kind="background" data-tip="Show background sessions (claude --bg)">Bg</button>
+                <button class="on" data-kind="interactive" data-tip="Show interactive sessions">Interactive</button>
               </div>
               <button class="ico" id="demo-new" data-tip="Start a new session. Try it!">＋</button>
               <button class="ico" data-tip="Refresh now">↻</button>

@@ -55,8 +55,9 @@ impl Keepalive {
         let mut report = Report::default();
         let wanted: HashMap<&str, &Session> = sessions
             .iter()
-            // Never attach to a stopped session: that would resume it.
-            .filter(|s| s.is_running())
+            // Only sessions Claude lists as active: attaching to a completed
+            // one would resume it.
+            .filter(|s| s.active)
             .filter_map(|s| s.attach_id().map(|id| (id, s)))
             .collect();
 
@@ -428,7 +429,11 @@ mod tests {
         entries.push(
             r#"{"pid":2,"cwd":"/p","kind":"interactive","startedAt":0,"sessionId":"i"}"#.into(),
         );
-        parse_agents_json(&format!("[{}]", entries.join(","))).unwrap()
+        let mut sessions = parse_agents_json(&format!("[{}]", entries.join(","))).unwrap();
+        for s in &mut sessions {
+            s.active = true;
+        }
+        sessions
     }
 
     #[test]
@@ -474,16 +479,18 @@ mod tests {
     }
 
     #[test]
-    fn blocked_sessions_are_kept_alive_but_stopped_ones_are_not_resumed() {
+    fn completed_sessions_are_not_resumed() {
         let mut ka = Keepalive::new(Box::new(Fake::default()));
-        let sessions = parse_agents_json(
+        let mut sessions = parse_agents_json(
             r#"[{"id":"bb","cwd":"/p","kind":"background","sessionId":"bb-full","state":"blocked"},
-                {"id":"ss","cwd":"/p","kind":"background","sessionId":"ss-full","state":"stopped"}]"#,
+                {"id":"dd","cwd":"/p","kind":"background","sessionId":"dd-full","state":"done"}]"#,
         )
         .unwrap();
+        // Only the first is in plain `claude agents --json`.
+        sessions[0].active = true;
         let report = ka.reconcile(&env(), &sessions);
         assert_eq!(report.started, vec!["bb".to_string()]);
-        assert!(!report.alive.contains("ss"));
+        assert!(!report.alive.contains("dd"));
     }
 
     #[test]

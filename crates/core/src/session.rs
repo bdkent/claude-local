@@ -29,6 +29,12 @@ pub struct Session {
     pub name: Option<String>,
     pub status: Option<String>,
     pub state: Option<String>,
+    /// Whether plain `claude agents --json` lists this session, i.e. Claude
+    /// counts it as active. The rest only appear with `--all`, which Claude's
+    /// help calls "completed background sessions". Set by
+    /// `claude::list_sessions`, never parsed.
+    #[serde(skip_deserializing)]
+    pub active: bool,
 }
 
 impl Default for Session {
@@ -43,6 +49,7 @@ impl Default for Session {
             name: None,
             status: None,
             state: None,
+            active: false,
         }
     }
 }
@@ -86,11 +93,14 @@ impl Session {
         }
     }
 
-    /// Whether the session is active. `claude agents --json` lists only
-    /// active sessions, but if one is ever reported as stopped, attaching to it
-    /// would resume it, so keep-alive skips those.
-    pub fn is_running(&self) -> bool {
-        !matches!(self.state.as_deref(), Some("stopped" | "exited"))
+    /// Identifies the same session across the `--json` and `--json --all`
+    /// listings.
+    pub fn key(&self) -> &str {
+        if self.session_id.is_empty() {
+            self.id.as_deref().unwrap_or("")
+        } else {
+            &self.session_id
+        }
     }
 
     pub fn dot(&self) -> Dot {
@@ -184,20 +194,22 @@ mod tests {
 
     #[test]
     fn entries_without_pid_or_other_fields_still_parse() {
-        // A blocked background session (waiting for the user) has no pid or
-        // status but is still active; a stopped one is not.
+        // A blocked background session can have no pid or status; a completed
+        // one (from `--all`) has only a state.
         let json = r#"[
           {"id":"c42d8a15","cwd":"/p/harbor","kind":"background","startedAt":1,"sessionId":"c42d8a15-6e7f","name":"harbor-build","state":"blocked"},
-          {"id":"5d0c2f7e","cwd":"/p/meadow","kind":"background","sessionId":"5d0c2f7e-1a3b","state":"stopped"},
+          {"id":"5d0c2f7e","cwd":"/p/meadow","kind":"background","sessionId":"5d0c2f7e-1a3b","state":"done"},
           "not an object",
           {"pid":"not a number","kind":"background"}
         ]"#;
         let sessions = parse_agents_json(json).unwrap();
         assert_eq!(sessions.len(), 2);
         assert!(sessions[0].pid.is_none() && sessions[0].status.is_none());
-        assert!(sessions[0].is_running());
         assert_eq!(sessions[0].attach_id(), Some("c42d8a15"));
-        assert!(!sessions[1].is_running());
+        assert_eq!(sessions[1].key(), "5d0c2f7e-1a3b");
+        // `active` comes from comparing listings, never from the JSON.
+        assert!(sessions.iter().all(|s| !s.active));
+        assert!(!parse_agents_json(r#"[{"kind":"background","active":true}]"#).unwrap()[0].active);
         assert!(parse_agents_json("{}").is_err());
     }
 

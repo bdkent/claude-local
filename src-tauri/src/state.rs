@@ -22,8 +22,6 @@ pub struct SessionView {
     pub session: Session,
     pub project: String,
     pub attachable: bool,
-    /// Has a live process; a stopped background session doesn't.
-    pub running: bool,
     /// The status dot: colour from `state`, pulsing while `status` is busy.
     pub dot: Dot,
     pub kept_alive: bool,
@@ -230,7 +228,6 @@ impl AppState {
                         .map(|s| SessionView {
                             project: s.project(),
                             attachable: s.attach_id().is_some(),
-                            running: s.is_running(),
                             dot: s.dot(),
                             kept_alive: s.attach_id().is_some_and(|id| alive.contains(id)),
                             session: s,

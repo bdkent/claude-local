@@ -387,6 +387,13 @@ h3 {
 .seg {
   display: flex;
   flex: 1;
+}
+
+.seg.fit {
+  flex: none;
+}
+
+.seg {
   padding: 2px;
   border-radius: 7px;
   background: #2f2d2a;
