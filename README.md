@@ -38,7 +38,10 @@ through Remote Control.
 - **Open in terminal.** Double-click a background session, or hit **Open**, to
   run `claude attach <id>` in Terminal, iTerm2, Ghostty, WezTerm, kitty,
   Alacritty, Windows Terminal, PowerShell, or a custom command. The hidden
-  keep-alive stays attached alongside it.
+  keep-alive stays attached alongside it. With Ghostty 1.3 or newer, sessions
+  open as tabs in your front Ghostty window (through Ghostty's AppleScript
+  support; macOS asks once for permission to let Claude Local control
+  Ghostty). Older Ghostty versions open a new window each time.
 - **Delete.** Hover a background session and click the trash icon (or select
   it and press Delete). After you confirm, it runs `claude rm <id>`, which
   deletes the session and its worktree. If the worktree has unpushed commits,
