@@ -149,13 +149,15 @@ pub fn build_launch(app: TerminalApp, custom: &str, claude: &Path, t: &Target) -
     argv.extend(t.args.iter().cloned());
     // The same, as a line typed into the user's shell. Single-quoted strings
     // (including multi-line prompts) parse the same in sh, bash, zsh and fish.
-    // `claude <args>` as one shell-quoted command line.
-    let command_line = std::iter::once(&claude_str)
-        .chain(&t.args)
-        .map(|a| shell_quote(a))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let shell_line = format!("cd {} && {command_line}", shell_quote(cwd));
+    let shell_line = format!(
+        "cd {} && {}",
+        shell_quote(cwd),
+        std::iter::once(&claude_str)
+            .chain(&t.args)
+            .map(|a| shell_quote(a))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
 
     let launch = match app {
         Terminal => osascript(&[
@@ -174,12 +176,6 @@ pub fn build_launch(app: TerminalApp, custom: &str, claude: &Path, t: &Target) -
             ),
             "end tell",
         ]),
-        // Ghostty 1.3+ can be scripted: open a tab in the front window. Older
-        // versions only take a command at launch, which means a new instance.
-        Ghostty if find_mac_app(app).is_some_and(|p| ghostty_scriptable(&p)) => {
-            let lines = ghostty_tab_script(cwd, &t.title, &command_line);
-            osascript(&lines.iter().map(String::as_str).collect::<Vec<_>>())
-        }
         Ghostty => open_app(
             app,
             [format!("--working-directory={cwd}"), "-e".into()]
@@ -358,56 +354,6 @@ pub fn find_mac_app(app: TerminalApp) -> Option<std::path::PathBuf> {
         .lines()
         .map(std::path::PathBuf::from)
         .find(|p| p.extension().is_some_and(|e| e == "app") && p.is_dir())
-}
-
-/// AppleScript that opens `command` in a new Ghostty tab of the front window
-/// (or a new window if none is open), titled `title`. Uses the scripting
-/// dictionary Ghostty added in 1.3.
-fn ghostty_tab_script(cwd: &str, title: &str, command: &str) -> Vec<String> {
-    vec![
-        "tell application \"Ghostty\"".into(),
-        "activate".into(),
-        "set cfg to new surface configuration".into(),
-        format!(
-            "set initial working directory of cfg to {}",
-            applescript_string(cwd)
-        ),
-        format!("set command of cfg to {}", applescript_string(command)),
-        "if (count of windows) > 0 then".into(),
-        "set tb to new tab in front window with configuration cfg".into(),
-        "else".into(),
-        "set win to new window with configuration cfg".into(),
-        "set tb to selected tab of win".into(),
-        "end if".into(),
-        format!(
-            "perform action {} on focused terminal of tb",
-            applescript_string(&format!("set_tab_title:{title}"))
-        ),
-        "end tell".into(),
-    ]
-}
-
-/// Whether the Ghostty app at `app` is 1.3 or newer, i.e. scriptable.
-fn ghostty_scriptable(app: &Path) -> bool {
-    let plist = app.join("Contents/Info.plist");
-    Command::new("plutil")
-        .args(["-extract", "CFBundleShortVersionString", "raw", "-o", "-"])
-        .arg(&plist)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .is_some_and(|o| version_at_least(&String::from_utf8_lossy(&o.stdout), (1, 3)))
-}
-
-/// Compare a "major.minor[.patch]" version string against `(major, minor)`.
-fn version_at_least(version: &str, min: (u32, u32)) -> bool {
-    let mut parts = version
-        .trim()
-        .split('.')
-        .map(|p| p.parse::<u32>().unwrap_or(0));
-    let major = parts.next().unwrap_or(0);
-    let minor = parts.next().unwrap_or(0);
-    (major, minor) >= min
 }
 
 fn osascript(lines: &[&str]) -> Launch {
@@ -638,37 +584,6 @@ mod tests {
         assert!(!list.contains(&TerminalApp::XTerminalEmulator));
         assert!(!list.contains(&TerminalApp::WindowsTerminal));
         assert!(check_installed(TerminalApp::Custom, "nope-term {args}", &empty).is_err());
-    }
-
-    #[test]
-    fn ghostty_tab_script_opens_a_titled_tab() {
-        let script = ghostty_tab_script(
-            "/Users/you/my projects/starship",
-            "say \"hi\"",
-            "/bin/claude attach 3b9e1c07",
-        );
-        assert_eq!(script[0], "tell application \"Ghostty\"");
-        assert!(script.contains(
-            &r#"set initial working directory of cfg to "/Users/you/my projects/starship""#
-                .to_string()
-        ));
-        assert!(
-            script.contains(&r#"set command of cfg to "/bin/claude attach 3b9e1c07""#.to_string())
-        );
-        assert!(script
-            .contains(&"set tb to new tab in front window with configuration cfg".to_string()));
-        assert!(script.contains(
-            &r#"perform action "set_tab_title:say \"hi\"" on focused terminal of tb"#.to_string()
-        ));
-    }
-
-    #[test]
-    fn ghostty_version_check() {
-        assert!(version_at_least("1.4.0", (1, 3)));
-        assert!(version_at_least("1.3", (1, 3)));
-        assert!(version_at_least("2.0.1\n", (1, 3)));
-        assert!(!version_at_least("1.2.3", (1, 3)));
-        assert!(!version_at_least("", (1, 3)));
     }
 
     #[test]
