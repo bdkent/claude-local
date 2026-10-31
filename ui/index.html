@@ -8,25 +8,44 @@
   </head>
   <body>
     <main id="list-view">
-      <header class="toolbar">
-        <div class="segmented" role="group" aria-label="Listing">
-          <button id="show-all" aria-pressed="true" data-tip="On: everything claude agents --json --all lists. Off: only claude agents --json.">All</button>
+      <div class="controls">
+        <header class="toolbar">
+          <div class="segmented" role="group" aria-label="Listing">
+            <button id="show-all" aria-pressed="true" data-tip="On: everything claude agents --json --all lists. Off: only claude agents --json.">All</button>
+          </div>
+          <div class="segmented grow" role="group" aria-label="Session kinds">
+            <button data-kind="background" aria-pressed="true" data-tip="Show background sessions (started with claude --bg)">Bg</button>
+            <button data-kind="interactive" aria-pressed="true" data-tip="Show interactive sessions">Interactive</button>
+          </div>
+          <button id="new-session-button" class="icon" data-tip="Start a new session in a project folder" aria-label="New session">＋</button>
+          <button id="refresh" class="icon" data-tip="Refresh the list now" aria-label="Refresh">↻</button>
+          <button id="open-settings" class="icon" data-tip="Settings" aria-label="Settings">⚙</button>
+        </header>
+        <div class="filters">
+          <select id="project" aria-label="Project" data-tip="Show sessions from one project folder"></select>
+          <input id="search" type="search" placeholder="Filter by name" aria-label="Filter by name" data-tip="Filter by session or project name" />
         </div>
-        <div class="segmented grow" role="group" aria-label="Session kinds">
-          <button data-kind="background" aria-pressed="true" data-tip="Show background sessions (started with claude --bg)">Bg</button>
-          <button data-kind="interactive" aria-pressed="true" data-tip="Show interactive sessions">Interactive</button>
+        <div class="filters states" role="group" aria-label="States">
+          <button data-state="working" aria-pressed="true" data-tip="Show sessions whose state is working"><span class="dot green"></span>working</button>
+          <button data-state="blocked" aria-pressed="true" data-tip="Show sessions whose state is blocked"><span class="dot orange"></span>blocked</button>
+          <button data-state="done" aria-pressed="true" data-tip="Show sessions whose state is done"><span class="dot blue"></span>done</button>
+          <button data-state="other" aria-pressed="true" data-tip="Show sessions with no state, or any other state"><span class="dot gray"></span>other</button>
         </div>
-        <button id="new-session-button" class="icon" data-tip="Start a new session in a project folder" aria-label="New session">＋</button>
-        <button id="refresh" class="icon" data-tip="Refresh the list now" aria-label="Refresh">↻</button>
-        <button id="open-settings" class="icon" data-tip="Settings" aria-label="Settings">⚙</button>
-      </header>
-      <div class="filters">
-        <select id="project" aria-label="Project" data-tip="Show sessions from one project folder"></select>
-        <input id="search" type="search" placeholder="Filter by name" aria-label="Filter by name" data-tip="Filter by session or project name" />
+        <div class="filters">
+          <select id="group-by" aria-label="Group by" data-tip="How sessions are grouped">
+            <option value="project">Group: Project</option>
+            <option value="state">Group: State</option>
+            <option value="none">Group: None</option>
+          </select>
+          <select id="sort-by" aria-label="Sort by" data-tip="How sessions are ordered within each group: by name (A–Z) or by startedAt (newest first)">
+            <option value="name">Sort: Name</option>
+            <option value="started">Sort: Started</option>
+          </select>
+        </div>
       </div>
       <section id="setup" class="setup" hidden></section>
       <div id="banner" class="banner" hidden></div>
-      <ul id="groups" class="groups"></ul>
+      <div id="groups" class="groups"></div>
       <p id="empty" class="empty" hidden></p>
       <footer id="status" class="status" data-tip="When the list last refreshed, and how many background sessions are being kept alive"></footer>
     </main>
@@ -71,37 +90,6 @@
         <small id="config-path" class="hint"></small>
       </form>
     </main>
-
-    <dialog id="new-session">
-      <form id="new-session-form">
-        <h2>New session</h2>
-        <label>
-          Project folder
-          <span class="row">
-            <select name="cwd" required data-tip="The folder the session starts in. Recent folders and folders with a running session are listed."></select>
-            <button type="button" id="choose-folder" data-tip="Pick any folder">Choose…</button>
-          </span>
-          <small id="cwd-path"></small>
-        </label>
-        <label>
-          Name
-          <input name="name" placeholder="e.g. fix-save-bug" spellcheck="false" autocomplete="off" data-tip="Optional. Shown in this list and in Claude's /resume." />
-        </label>
-        <label>
-          First prompt
-          <textarea name="prompt" rows="5" placeholder="What should Claude work on?" data-tip="Optional. Sent as the session's first message."></textarea>
-        </label>
-        <label class="check" data-tip="On: runs claude --bg in that folder and keeps it alive. Off: opens your terminal running claude there.">
-          <input type="checkbox" name="background" />
-          Start in background
-        </label>
-        <p id="new-session-error" class="banner error" hidden></p>
-        <div class="actions">
-          <button type="button" id="cancel-new-session">Cancel</button>
-          <button type="submit" class="primary">Start</button>
-        </div>
-      </form>
-    </dialog>
 
     <dialog id="confirm-delete">
       <form id="delete-form">

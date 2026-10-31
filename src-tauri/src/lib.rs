@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, State, WebviewWindow, WindowEvent};
+use tauri::{
+    AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
+};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_positioner::{Position, WindowExt};
 
@@ -48,6 +50,33 @@ async fn delete_session(
 struct NewSessionDefaults {
     projects: Vec<String>,
     background: bool,
+}
+
+const NEW_SESSION_WINDOW: &str = "new-session";
+
+/// Open the New Session window, or bring it forward if it's already open. It's
+/// a window of its own so the form isn't limited to the list's narrow size.
+/// Async so creating a window doesn't block the main thread (required on Windows).
+#[tauri::command]
+async fn open_new_session_window(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(NEW_SESSION_WINDOW) {
+        let _ = window.unminimize();
+        let _ = window.show();
+        return window.set_focus().map_err(|e| e.to_string());
+    }
+    WebviewWindowBuilder::new(
+        &app,
+        NEW_SESSION_WINDOW,
+        WebviewUrl::App("new-session.html".into()),
+    )
+    .title("New Session")
+    .inner_size(520.0, 580.0)
+    .min_inner_size(380.0, 420.0)
+    .center()
+    .focused(true)
+    .build()
+    .map(|_| ())
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -278,7 +307,10 @@ pub fn run() {
             state::spawn_poller(app.handle().clone(), state);
             Ok(())
         })
+        // Only the session list lives in the tray; other windows (New Session)
+        // close normally.
         .on_window_event(|window, event| match event {
+            _ if window.label() != "main" => {}
             // Closing the list hides it; the app lives in the tray.
             WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
@@ -304,6 +336,7 @@ pub fn run() {
             save_settings,
             new_session_defaults,
             start_session,
+            open_new_session_window,
             delete_session,
         ])
         .run(tauri::generate_context!())

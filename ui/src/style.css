@@ -138,11 +138,52 @@ button.icon:hover {
   color: var(--text);
 }
 
+/* The toolbar and filter rows sit in a grid with the same ~260px tracks as
+   the session columns below: stacked in a narrow window, side by side (and
+   lined up with the columns) in a wide one. */
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  column-gap: 12px;
+  row-gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.controls > .toolbar,
+.controls > .filters {
+  min-width: 0;
+  padding: 0;
+}
+
 .filters {
   display: flex;
   gap: 6px;
-  padding: 0 8px 8px;
-  border-bottom: 1px solid var(--border);
+  padding: 0 8px 6px;
+}
+
+.filters.states button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  padding: 2px 6px;
+  font-size: 11.5px;
+}
+
+.filters.states button[aria-pressed="false"] {
+  opacity: 0.4;
+  background: transparent;
+}
+
+.filters.states .dot {
+  width: 7px;
+  height: 7px;
 }
 
 .filters select,
@@ -633,3 +674,119 @@ dialog .actions button.danger {
 .tooltip.visible {
   opacity: 1;
 }
+
+.group.flat .session {
+  padding-left: 10px;
+}
+
+/* A wide window flows groups into columns instead of leaving empty space;
+   a narrow one stays a single column. */
+.cols {
+  column-width: 260px;
+  column-gap: 12px;
+  column-rule: 1px solid var(--border);
+}
+
+.group,
+.session {
+  break-inside: avoid;
+}
+
+/* The flat list is one group, so it has to split across columns. */
+.group.flat {
+  break-inside: auto;
+}
+
+/* New Session window ----------------------------------------------------- */
+
+.sheet {
+  height: 100%;
+}
+
+.sheet form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  padding: 16px;
+}
+
+.sheet h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sheet label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sheet label.grow {
+  flex: 1;
+  min-height: 120px;
+}
+
+.sheet label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.sheet .row {
+  display: flex;
+  gap: 6px;
+}
+
+.sheet .row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.sheet select,
+.sheet input:not([type="checkbox"]),
+.sheet textarea {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 7px;
+  font: inherit;
+  color: inherit;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.sheet textarea {
+  flex: 1;
+  resize: none;
+}
+
+.sheet small {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.sheet .banner {
+  margin: 0;
+}
+
+.sheet .row button,
+.sheet .actions button {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 6px;
+  padding: 4px 12px;
+}
+
+.sheet .actions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.sheet .actions button:disabled {
+  opacity: 0.6;
+}
+

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open as pickFolder } from "@tauri-apps/plugin-dialog";
+
+import { $, el, hideDetachedTip, installTooltips, prefs, withTip } from "./common";
 
 type Kind = "interactive" | "background" | "other";
 
@@ -62,27 +63,6 @@ interface SettingsView {
 }
 
 
-const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
-
-// Per-viewer UI preferences; storage can be unavailable, so never depend on it.
-const prefs = {
-  load<T>(key: string, fallback: T): T {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? (JSON.parse(raw) as T) : fallback;
-    } catch {
-      return fallback;
-    }
-  },
-  save(key: string, value: unknown) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      /* ignore */
-    }
-  },
-};
-
 let snapshot: Snapshot | null = null;
 // "All" on: everything `claude agents --json --all` lists. Off: only what
 // plain `claude agents --json` lists (`active`).
@@ -93,6 +73,27 @@ const kinds: Record<"background" | "interactive", boolean> = prefs.load("kinds",
   interactive: true,
 });
 let projectFilter: string = prefs.load("project", "");
+
+/** `state` values with their own filter toggle and dot colour; the rest are "other". */
+const STATES = ["working", "blocked", "done", "other"] as const;
+type StateKey = (typeof STATES)[number];
+const stateFilter: Record<StateKey, boolean> = {
+  working: true,
+  blocked: true,
+  done: true,
+  other: true,
+  ...prefs.load<Partial<Record<StateKey, boolean>>>("states", {}),
+};
+
+type GroupBy = "project" | "state" | "none";
+type SortBy = "name" | "started";
+let groupBy: GroupBy = prefs.load<string>("groupBy", "project") as GroupBy;
+if (!["project", "state", "none"].includes(groupBy)) groupBy = "project";
+let sortBy: SortBy = prefs.load("sortBy", "name");
+
+function stateKey(s: SessionView): StateKey {
+  return s.state === "working" || s.state === "blocked" || s.state === "done" ? s.state : "other";
+}
 let search = "";
 // A short-lived message in the footer, e.g. after starting a session.
 let flash: { text: string; until: number } | null = null;
@@ -104,22 +105,6 @@ function ago(ms: number): string {
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   if (s < 86400) return `${Math.floor(s / 3600)}h`;
   return `${Math.floor(s / 86400)}d`;
-}
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  props: Partial<HTMLElementTagNameMap[K]> = {},
-  ...children: (Node | string)[]
-): HTMLElementTagNameMap[K] {
-  const node = Object.assign(document.createElement(tag), props);
-  node.append(...children);
-  return node;
-}
-
-/** Give an element a hover/focus tooltip (see the tooltip section below). */
-function withTip<T extends HTMLElement>(node: T, text: string): T {
-  node.dataset.tip = text;
-  return node;
 }
 
 /** Name of the configured terminal, for tooltips. */
@@ -136,6 +121,7 @@ function visibleSessions(all: SessionView[]): SessionView[] {
   return all.filter(
     (s) =>
       (showAll || s.active) &&
+      stateFilter[stateKey(s)] &&
       (s.kind === "other" || kinds[s.kind]) &&
       (!projectFilter || s.project === projectFilter) &&
       (!q || displayName(s).toLowerCase().includes(q) || s.project.toLowerCase().includes(q)),
@@ -263,18 +249,17 @@ function render() {
   }
   select.value = projectFilter;
 
-  const shown = visibleSessions(sessions);
-  const groups = new Map<string, SessionView[]>();
-  for (const s of shown) groups.set(s.project, [...(groups.get(s.project) ?? []), s]);
+  const shown = sortSessions(visibleSessions(sessions));
+  const groups = groupSessions(shown);
 
   // Rebuild rows only when what they show changes (ages tick once a minute),
   // so hover tooltips and keyboard focus survive routine polls.
   const groupsEl = $("#groups");
-  const rowsKey = JSON.stringify([shown, [...collapsed], terminalLabel(), Math.floor(Date.now() / 60_000)]);
+  const rowsKey = JSON.stringify([shown, groupBy, [...collapsed], terminalLabel(), Math.floor(Date.now() / 60_000)]);
   if (groupsEl.dataset.key !== rowsKey) {
     groupsEl.dataset.key = rowsKey;
     renderGroups(groupsEl, groups);
-    if (tipTarget && !tipTarget.isConnected) hideTip();
+    hideDetachedTip();
   }
 
   const failing = snapshot.checks.filter((c) => !c.ok);
@@ -301,29 +286,65 @@ function render() {
         : `${time} · keep-alive off`;
 }
 
+function sortSessions(list: SessionView[]): SessionView[] {
+  const byName = (a: SessionView, b: SessionView) =>
+    displayName(a).localeCompare(displayName(b), undefined, { numeric: true, sensitivity: "base" });
+  return [...list].sort((a, b) =>
+    sortBy === "started" ? (b.startedAt ?? -1) - (a.startedAt ?? -1) || byName(a, b) : byName(a, b),
+  );
+}
+
+/** Group (already sorted) sessions; the order of groups depends on the grouping. */
+function groupSessions(list: SessionView[]): Map<string, SessionView[]> {
+  const keyOf = (s: SessionView): string =>
+    groupBy === "project" ? s.project : groupBy === "state" ? stateKey(s) : "";
+  const groups = new Map<string, SessionView[]>();
+  for (const s of list) groups.set(keyOf(s), [...(groups.get(keyOf(s)) ?? []), s]);
+
+  const order: string[] =
+    groupBy === "state"
+      ? [...STATES]
+      : [...groups.keys()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  return new Map(order.filter((k) => groups.has(k)).map((k) => [k, groups.get(k)!]));
+}
+
 function renderGroups(container: HTMLElement, groups: Map<string, SessionView[]>) {
+  // `.cols` flows groups into side-by-side columns when the window is wide.
+  if (groupBy === "none") {
+    const items = groups.get("") ?? [];
+    container.replaceChildren(
+      el("ul", { className: "cols" }, el("li", { className: "group flat" }, el("ul", { className: "sessions" }, ...items.map(sessionRow)))),
+    );
+    return;
+  }
   container.replaceChildren(
-    ...[...groups].map(([project, items]) => {
-      const isCollapsed = collapsed.has(project);
+    el(
+      "ul",
+      { className: "cols" },
+      ...[...groups].map(([label, items]) => {
+      // Collapse state is remembered per grouping.
+      const key = `${groupBy}:${label}`;
+      const isCollapsed = collapsed.has(key);
       const header = withTip(
         el(
           "button",
           { className: "group-header", ariaExpanded: String(!isCollapsed) },
           el("span", { className: "caret" }, isCollapsed ? "▸" : "▾"),
-          `${project} `,
+          `${label} `,
           el("span", { className: "count" }, `(${items.length})`),
         ),
-        `${isCollapsed ? "Expand" : "Collapse"} ${project}`,
+        `${isCollapsed ? "Expand" : "Collapse"} ${label}`,
       );
       header.addEventListener("click", () => {
-        if (collapsed.has(project)) collapsed.delete(project);
-        else collapsed.add(project);
+        if (collapsed.has(key)) collapsed.delete(key);
+        else collapsed.add(key);
         prefs.save("collapsed", [...collapsed]);
         render();
       });
       const list = el("ul", { className: "sessions" }, ...(isCollapsed ? [] : items.map(sessionRow)));
       return el("li", { className: "group" }, header, list);
-    }),
+      }),
+    ),
   );
 }
 
@@ -409,10 +430,38 @@ function hideBanner() {
 
 function syncToggles() {
   $("#show-all").setAttribute("aria-pressed", String(showAll));
+  document.querySelectorAll<HTMLButtonElement>("[data-state]").forEach((b) => {
+    b.setAttribute("aria-pressed", String(stateFilter[b.dataset.state as StateKey]));
+  });
   document.querySelectorAll<HTMLButtonElement>("[data-kind]").forEach((b) => {
     b.setAttribute("aria-pressed", String(kinds[b.dataset.kind as keyof typeof kinds]));
   });
 }
+
+document.querySelectorAll<HTMLButtonElement>("[data-state]").forEach((b) => {
+  b.addEventListener("click", () => {
+    const key = b.dataset.state as StateKey;
+    stateFilter[key] = !stateFilter[key];
+    prefs.save("states", stateFilter);
+    syncToggles();
+    render();
+  });
+});
+
+const groupSelect = $<HTMLSelectElement>("#group-by");
+const sortSelect = $<HTMLSelectElement>("#sort-by");
+groupSelect.value = groupBy;
+sortSelect.value = sortBy;
+groupSelect.addEventListener("change", () => {
+  groupBy = groupSelect.value as GroupBy;
+  prefs.save("groupBy", groupBy);
+  render();
+});
+sortSelect.addEventListener("change", () => {
+  sortBy = sortSelect.value as SortBy;
+  prefs.save("sortBy", sortBy);
+  render();
+});
 
 $("#show-all").addEventListener("click", () => {
   showAll = !showAll;
@@ -505,85 +554,11 @@ form.addEventListener("submit", async (e) => {
 });
 
 // --- new session ---------------------------------------------------------
+// The form lives in its own window (new-session.html), so it isn't squeezed
+// into the narrow list. It reports back with a `session-started` event.
 
-const dialog = $<HTMLDialogElement>("#new-session");
-const newForm = $<HTMLFormElement>("#new-session-form");
-const newField = <T extends HTMLElement>(name: string) => newForm.elements.namedItem(name) as unknown as T;
-const cwdSelect = newField<HTMLSelectElement>("cwd");
-
-const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-
-function setFolders(folders: string[], selected?: string) {
-  cwdSelect.replaceChildren(...folders.map((f) => el("option", { value: f, textContent: basename(f), title: f })));
-  if (selected) cwdSelect.value = selected;
-  $("#cwd-path").textContent = cwdSelect.value;
-}
-
-async function showNewSession() {
-  const d = await invoke<{ projects: string[]; background: boolean }>("new_session_defaults");
-  // Default to the project the list is filtered to, if any.
-  const preferred = d.projects.find((p) => basename(p) === projectFilter);
-  setFolders(d.projects, preferred);
-  newField<HTMLInputElement>("name").value = "";
-  newField<HTMLTextAreaElement>("prompt").value = "";
-  newField<HTMLInputElement>("background").checked = d.background;
-  $("#new-session-error").hidden = true;
-  dialog.showModal();
-  (d.projects.length ? newField<HTMLInputElement>("name") : $<HTMLButtonElement>("#choose-folder")).focus();
-}
-
-cwdSelect.addEventListener("change", () => {
-  $("#cwd-path").textContent = cwdSelect.value;
-});
-
-$("#choose-folder").addEventListener("click", async () => {
-  const dir = await pickFolder({ directory: true, defaultPath: cwdSelect.value || undefined });
-  if (typeof dir !== "string") return;
-  const existing = [...cwdSelect.options].map((o) => o.value).filter((v) => v !== dir);
-  setFolders([dir, ...existing], dir);
-});
-
-$("#new-session-button").addEventListener("click", showNewSession);
-$("#cancel-new-session").addEventListener("click", () => dialog.close());
-
-const isMac = navigator.userAgent.includes("Mac");
-newField<HTMLTextAreaElement>("prompt").dataset.tip = `Optional. Sent as the session's first message. ${isMac ? "⌘" : "Ctrl+"}Enter starts the session.`;
-
-// Cmd/Ctrl+Enter in the prompt starts the session.
-newField<HTMLTextAreaElement>("prompt").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) newForm.requestSubmit();
-});
-
-newForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const error = $("#new-session-error");
-  const submit = newForm.querySelector<HTMLButtonElement>("button[type=submit]")!;
-  if (!cwdSelect.value) {
-    error.textContent = "Choose a project folder first.";
-    error.hidden = false;
-    return;
-  }
-  submit.disabled = true;
-  submit.textContent = "Starting…";
-  try {
-    const message = await invoke<string>("start_session", {
-      session: {
-        cwd: cwdSelect.value,
-        name: newField<HTMLInputElement>("name").value,
-        prompt: newField<HTMLTextAreaElement>("prompt").value,
-        background: newField<HTMLInputElement>("background").checked,
-      },
-    });
-    dialog.close();
-    showFlash(message.split("\n")[0]);
-  } catch (err) {
-    error.textContent = String(err);
-    error.hidden = false;
-  } finally {
-    submit.disabled = false;
-    submit.textContent = "Start";
-  }
-});
+$("#new-session-button").addEventListener("click", () => invoke("open_new_session_window"));
+listen<string>("session-started", (e) => showFlash(e.payload.split("\n")[0]));
 
 // --- delete session ------------------------------------------------------
 
@@ -650,67 +625,9 @@ deleteForm.addEventListener("submit", async (e) => {
   }
 });
 
-// --- tooltips ------------------------------------------------------------
-// One floating element for every [data-tip]. Native `title` tooltips are slow,
-// look different per OS, never show for keyboard focus, and sit underneath
-// modal dialogs.
-
-const tooltip = el("div", { className: "tooltip", role: "tooltip" });
-let tipTarget: HTMLElement | null = null;
-let tipTimer: number | undefined;
-
-function showTip(target: HTMLElement) {
-  const text = target.dataset.tip;
-  if (!text || !target.isConnected) return;
-  // A modal dialog sits in the top layer; the tooltip must live inside it to show.
-  (target.closest("dialog") ?? document.body).append(tooltip);
-  tooltip.textContent = text;
-  tooltip.classList.add("visible");
-
-  const margin = 6;
-  const r = target.getBoundingClientRect();
-  const t = tooltip.getBoundingClientRect();
-  let top = r.bottom + margin;
-  if (top + t.height > window.innerHeight - margin) top = r.top - t.height - margin;
-  const left = Math.min(
-    Math.max(margin, r.left + r.width / 2 - t.width / 2),
-    window.innerWidth - t.width - margin,
-  );
-  tooltip.style.top = `${Math.max(margin, top)}px`;
-  tooltip.style.left = `${left}px`;
-}
-
-function hideTip() {
-  clearTimeout(tipTimer);
-  tipTarget = null;
-  tooltip.classList.remove("visible");
-}
-
-function scheduleTip(target: HTMLElement | null) {
-  if (target === tipTarget) return;
-  hideTip();
-  if (!target) return;
-  tipTarget = target;
-  tipTimer = window.setTimeout(() => showTip(target), 450);
-}
-
-document.addEventListener("mouseover", (e) => {
-  scheduleTip((e.target as Element).closest<HTMLElement>("[data-tip]"));
-});
-document.addEventListener("mouseout", (e) => {
-  if (tipTarget && !tipTarget.contains(e.relatedTarget as Node | null)) hideTip();
-});
-document.addEventListener("focusin", (e) => {
-  const target = e.target as HTMLElement;
-  if (target.matches(":focus-visible")) scheduleTip(target.closest<HTMLElement>("[data-tip]"));
-});
-document.addEventListener("focusout", hideTip);
-for (const type of ["mousedown", "keydown", "scroll", "blur"]) {
-  window.addEventListener(type, hideTip, true);
-}
-
 // --- startup -------------------------------------------------------------
 
+installTooltips();
 syncToggles();
 listen<Snapshot>("snapshot", (e) => {
   snapshot = e.payload;

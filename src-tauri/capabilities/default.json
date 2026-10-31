@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the session list window",
-  "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open"]
+  "description": "Permissions for the session list and New Session windows",
+  "windows": ["main", "new-session"],
+  "permissions": ["core:default", "core:window:allow-close", "dialog:allow-open"]
 }

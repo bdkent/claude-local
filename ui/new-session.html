@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New Session</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="sheet">
+      <form id="new-session-form">
+        <h1>New session</h1>
+        <label>
+          Project folder
+          <span class="row">
+            <select name="cwd" required data-tip="The folder the session starts in. Recent folders and folders with a session are listed."></select>
+            <button type="button" id="choose-folder" data-tip="Pick any folder">Choose…</button>
+          </span>
+          <small id="cwd-path"></small>
+        </label>
+        <label>
+          Name
+          <input name="name" placeholder="e.g. fix-save-bug" spellcheck="false" autocomplete="off" data-tip="Optional. Shown in the session list and in Claude's /resume." />
+        </label>
+        <label class="grow">
+          First prompt
+          <textarea name="prompt" placeholder="What should Claude work on?"></textarea>
+        </label>
+        <label class="check" data-tip="On: runs claude --bg in that folder and keeps it alive. Off: opens your terminal running claude there.">
+          <input type="checkbox" name="background" />
+          Start in background
+        </label>
+        <p id="new-session-error" class="banner error" hidden></p>
+        <div class="actions">
+          <button type="button" id="cancel">Cancel</button>
+          <button type="submit" class="primary">Start</button>
+        </div>
+      </form>
+    </main>
+    <script type="module" src="/src/new-session.ts"></script>
+  </body>
+</html>

@@ -17,7 +17,7 @@ macOS and Windows
   />
 </picture>
 
-<sub>The session list, starting a new session, and the second confirmation
+<sub>The session list, the New Session window, and the second confirmation
 before discarding unpushed work. Shown with sample data.</sub>
 
 Built for running `claude --bg` sessions locally (for example projects that
@@ -27,7 +27,10 @@ through Remote Control.
 - **Buddy list.** Click the tray icon for a compact list grouped by project.
   **All** toggles between everything `claude agents --json --all` lists and
   only what plain `claude agents --json` lists; **Bg** and **Interactive**
-  toggle independently. You can also filter by project or name. The dot shows
+  toggle independently, and so do the `working` / `blocked` / `done` /
+  `other` state toggles. You can also filter by project or name, group by
+  project, by state or not at all, and sort by name or by `startedAt`. In a
+  wide window the groups flow into side-by-side columns. The dot shows
   Claude's own values, the way `claude agents` does: the colour comes from
   `state` (green `working`, blue `done`, orange `blocked`, gray for none or
   anything else) and the dot pulses while `status` is `busy`. Each row lists
@@ -44,13 +47,14 @@ through Remote Control.
   deletes the session and its worktree. If the worktree has unpushed commits,
   Claude refuses and the dialog shows its message with a second, explicit
   **Discard unpushed work and delete** button.
-- **New session.** Hit **＋**, pick a project folder (recent and active ones
-  are listed, or choose any folder), give it a name and a first prompt.
+- **New session.** Hit **＋** to open the New Session window, pick a project
+  folder (recent and active ones are listed, or choose any folder), give it a
+  name and a first prompt.
   **Start in background** runs `claude --bg --name … "prompt"` there.
   Unchecked, it opens your terminal running `claude --name … "prompt"`. The
   checkbox default is a setting. The folder must already be trusted by Claude
   Code (run `claude` there once); otherwise Claude's error is shown in the
-  dialog.
+  window.
 
 ## Install
 
@@ -128,7 +132,7 @@ Layout:
 ```
 crates/core/   session parsing, PATH discovery, keep-alive backends, terminal launchers (no UI)
 src-tauri/     the tray app: polling loop, tray icon, window, commands
-ui/            the list window (TypeScript + Vite, no framework)
+ui/            the list and New Session windows (TypeScript + Vite, no framework)
 site/          the GitHub Pages website
 docs/          README screenshots
 scripts/       icon generator, screenshot compositor
