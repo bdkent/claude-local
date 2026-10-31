@@ -77,6 +77,10 @@ pub struct AppState {
     /// Override flags `claude rm` reported per session, kept here so the UI
     /// can only confirm them, never supply its own.
     pending_rm: Mutex<HashMap<String, Vec<String>>>,
+    /// Whether leftover keep-alive clients have been stopped since keep-alive
+    /// was last off. Clients live in tmux and outlive the app, so with
+    /// keep-alive off they'd otherwise linger from an earlier run.
+    keepalive_cleared: AtomicBool,
     keepalive: Mutex<Option<Keepalive>>,
     snapshot: Mutex<Snapshot>,
     wake: (Mutex<bool>, Condvar),
@@ -96,6 +100,7 @@ impl AppState {
             env: Mutex::new(None),
             checks: Mutex::new(None),
             pending_rm: Mutex::new(HashMap::new()),
+            keepalive_cleared: AtomicBool::new(false),
             keepalive: Mutex::new(None),
             snapshot: Mutex::new(Snapshot::default()),
             wake: (Mutex::new(false), Condvar::new()),
@@ -212,7 +217,10 @@ impl AppState {
                 Err(e) => snap.error = Some(format!("{e:#}")),
                 Ok(sessions) => {
                     let mut alive = HashSet::new();
-                    if config.keepalive {
+                    if !config.keepalive {
+                        self.clear_leftover_keepalives(&env, &mut snap);
+                    } else {
+                        self.keepalive_cleared.store(false, Ordering::SeqCst);
                         match self.with_keepalive(&env, |ka| ka.reconcile(&env, &sessions)) {
                             Ok(report) => {
                                 alive = report.alive;
@@ -345,6 +353,18 @@ impl AppState {
                 lock(&self.pending_rm).insert(id.to_owned(), flags);
                 Ok(DeleteResult::NeedsDiscard { message })
             }
+        }
+    }
+
+    /// With keep-alive off, stop any clients left from an earlier run (or from
+    /// before it was switched off while the app was closed). Once per off spell.
+    fn clear_leftover_keepalives(&self, env: &ToolEnv, snap: &mut Snapshot) {
+        if self.keepalive_cleared.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        // No tmux means no leftover clients either.
+        if let Ok(report) = self.with_keepalive(env, |ka| ka.stop_all()) {
+            snap.keepalive_errors.extend(report.errors);
         }
     }
 
